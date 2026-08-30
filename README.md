@@ -1,6 +1,8 @@
-# 织影 WeaveReel · AI 视频创作工作台（画布模式）
+# 织影 WeaveReel · AI 视频创作工作台
 
-节点式 AI 视频创作工作台：在画布上用节点与连线组织创作——内容沿连线流动，逐级生成，链式成片。全栈实现、零 npm 依赖。
+节点式 AI 视频创作工作台：在画布上用节点与连线组织创作——内容沿连线流动，逐级生成，链式成片。
+
+技术栈：**Next.js 16（App Router）+ React 19 + TypeScript**，经 **@opennextjs/cloudflare** 部署到 Cloudflare Workers；画布持久化 / 模型配置 / 任务队列存 **D1**（Drizzle ORM），素材与生成图存 **R2**。
 
 ## 截图
 
@@ -19,14 +21,22 @@
 ## 快速开始
 
 ```bash
-node server.js
-# 打开 http://localhost:3000
+npm install
+npx wrangler d1 migrations apply weavereel_db --local   # 初始化本地 D1
+cp .dev.vars.example .dev.vars                           # 填入 SenseNova API key
+npm run dev                                              # http://localhost:3000（miniflare 本地提供 D1/R2）
 ```
 
-- 需要 Node.js >= 18（无任何第三方依赖）
-- `data/project.json`：画布自动保存
-- `data/config.json`：**生成模型配置**（含 API key，不进版本库；首次启动自动生成默认值，模板见 `data/config.example.json`）。编辑后刷新页面即生效，也可 `PUT /api/config` 更新
-- `uploads/`：上传的素材文件
+## 部署到 Cloudflare
+
+```bash
+npx wrangler d1 create weavereel-db     # 创建远程 D1（把 database_id 填入 wrangler.jsonc）
+npx wrangler r2 bucket create weavereel-uploads
+npm run build:cf                        # OpenNext 构建 worker
+npm run db:migrate:prod                 # 远程 D1 迁移
+npx wrangler secret put SENSENOVA_API_KEY
+npm run deploy:cf
+```
 
 ## 功能
 
@@ -97,19 +107,24 @@ node server.js
 ## 目录
 
 ```
-server.js        零依赖后端（静态托管 + API + 任务调度 + 视觉参考探测）
+src/
+  app/
+    page.tsx                画布工作台页面壳（React 19 客户端组件）
+    globals.css             全局样式
+    api/
+      project/  config/     D1 读写（画布 / 模型配置，PUT /api/config 更新）
+      generate/ tasks/[id]/ 生成任务（D1 落库 + waitUntil 异步执行 + 轮询）
+      upload/               素材上传 → R2（uploads/[key] 流式读回）
+      scene/ wave/ compose/ SVG 生成器（占位图 / 波形 / 胶片条）
+      vision-status/        视觉参考通道可用性探测
+  db/           Drizzle schema 与客户端（projects / settings / tasks 三表）
+  lib/          sensenova.ts（文本/图片/视觉描述+限流降级）· tasks.ts（任务管线）· svg.ts
 public/
-  index.html     页面结构
-  style.css      样式
-  app.js         画布引擎 + 编辑器 + API 对接
-data/            运行时生成：config.json（密钥，勿提交）/ project.json（画布）
-uploads/         素材与生成图（运行时生成）
+  weavereel.js  画布引擎（节点/连线/链式生成/编辑器导出，纯前端）
+src/drizzle/    D1 迁移（drizzle-kit generate 生成）
+docs/           产品截图
 ```
 
-## 首次运行
-
-```bash
-node server.js          # 首次启动自动生成 data/config.json
-# 编辑 data/config.json 填入你的 API key（模板见 data/config.example.json）
-# 打开 http://localhost:3000
-```
+说明：画布引擎为浏览器端纯 JS（`public/weavereel.js`），功能行为与原版完全一致；
+服务端由零依赖 `server.js` 迁移为 Next.js Route Handlers + Cloudflare 绑定（D1/R2），
+任务进度按创建时间无状态推进（天然适配 Workers 多隔离实例）。

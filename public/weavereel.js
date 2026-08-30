@@ -1299,3 +1299,9 @@ setInterval(refreshVisionStatus, 60 * 1000);
     setTimeout(() => { resetView(); if (nodes.length) { selected = nodes[0].id; render(); openPanel(); } }, 60);
   }
 })();
+
+/* ============ Next.js 页面壳接入：暴露"预览所选节点" ============ */
+function previewSelected() {
+  if (typeof selected === 'string' && selected) openLB(selected);
+  else toast('请先选择节点');
+}

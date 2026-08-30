@@ -1,6 +1,5 @@
 # 运行时生成：画布数据 / 模型配置（含 API key）/ 素材与日志
 data/*
-!data/config.example.json
 uploads/
 server.log
 *.log
@@ -12,3 +11,12 @@ node_modules/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Next.js / OpenNext / Wrangler 构建产物与本地密钥
+.next/
+.open-next/
+.wrangler/
+.dev.vars
+next-env.d.ts
+*.tsbuildinfo
+dev.db
