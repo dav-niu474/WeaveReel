@@ -7,3 +7,6 @@ SENSENOVA_API_KEY=sk-你的密钥
 SENSENOVA_TEXT_MODEL=sensenova-6.8-flash-lite
 SENSENOVA_IMAGE_MODEL=sensenova-u1-fast
 SENSENOVA_VISION_MODEL=sensenova-6.8-flash-lite
+
+# 登录口令（不设置时默认 weavereel）
+AUTH_PASSWORD=your-access-password

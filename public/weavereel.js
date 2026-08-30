@@ -161,22 +161,6 @@ const EDGE_OK = {
   audio: { edit: 1 },
   edit : {},
 };
-function edgeType(from, to) {
-  const f = nodes.find(n => n.id === from), t = nodes.find(n => n.id === to);
-  if (!f || !t) return 'ref';
-  if (t.type === 'edit') return 'into';
-  if (f.type === 'nine' && t.type === 'image') return 'promote';
-  if (t.type === 'nine') return 'split';
-  if (f.type === 'text' && (t.type === 'image' || t.type === 'video')) return 'viz';
-  return 'ref';
-}
-const EDGE_META = {
-  viz:     { color: '#4f8cff', glyph: '✎→', name: '可视化' },
-  ref:     { color: '#3ecf8e', glyph: '⇢',  name: '参考' },
-  split:   { color: '#f5a623', glyph: '▦',  name: '拆解' },
-  promote: { color: '#f5a623', glyph: '⬆',  name: '提升' },
-  into:    { color: '#f5576c', glyph: '⬈',  name: '入片' },
-};
 /** 唯一建线入口：合法性校验 + 去重 + 提示 */
 function addEdge(fromId, toId, opts = {}) {
   const f = nodes.find(n => n.id === fromId), t = nodes.find(n => n.id === toId);
@@ -377,21 +361,14 @@ function drawWires(temp) {
     if (!nodeEl(e.from) || !nodeEl(e.to)) return;
     const a = portPos(e.from, 'out'), b = portPos(e.to, 'in');
     const sel = selectedEdge && selectedEdge.from === e.from && selectedEdge.to === e.to;
-    const fn = nodes.find(x => x.id === e.from), tn = nodes.find(x => x.id === e.to);
-    /* 连线语义着色：可视化蓝 / 参考绿 / 拆解·提升橙 / 入片红；有内容流动时加亮 */
-    const et = EDGE_META[edgeType(e.from, e.to)];
+    const fn = nodes.find(x => x.id === e.from);
+    /* 连线统一样式：上游有产出 → 点亮，表示这条线有内容在流动 */
     const fed = fn && hasContent(fn) ? ' fed' : '';
-    const style = `stroke="${et.color}"${fed ? '' : ' opacity="0.45"'}`;
-    html += `<path class="wire${sel ? ' selected' : ''}${fed}" d="${wirePath(a, b)}" data-edge="${e.from}-${e.to}" ${style}/>`;
+    html += `<path class="wire${sel ? ' selected' : ''}${fed}" d="${wirePath(a, b)}" data-edge="${e.from}-${e.to}"/>`;
     const m = wireMid(a, b);
     html += `<g class="wire-mid" data-edge="${e.from}-${e.to}">
-      <circle cx="${m.x}" cy="${m.y}" r="9" fill="${et.color}"/>
-      <text x="${m.x}" y="${m.y + 3.5}" text-anchor="middle" font-size="9" fill="#0e1220" font-weight="bold">${et.glyph[0]}</text>
-      ${sel ? '' : `<circle cx="${m.x}" cy="${m.y}" r="9" fill="none" stroke="${et.color}" stroke-opacity=".5"/>`}</g>`;
-    /* 线旁语义标签：放大到 80% 以上时显示 */
-    if (scale >= 0.8 && !sel) {
-      html += `<text class="wire-tag" x="${m.x}" y="${m.y - 13}" text-anchor="middle" font-size="10" fill="${et.color}">${et.name}</text>`;
-    }
+      <circle cx="${m.x}" cy="${m.y}" r="9"/><line x1="${m.x - 4.5}" y1="${m.y}" x2="${m.x + 4.5}" y2="${m.y}"/>
+      ${sel ? '' : '<line x1="' + m.x + '" y1="' + (m.y - 4.5) + '" x2="' + m.x + '" y2="' + (m.y + 4.5) + '"/>'}</g>`;
   });
   if (temp) html += `<path d="${wirePath(temp.a, temp.b)}" stroke="#8b7bff" stroke-width="2" fill="none" stroke-dasharray="6 4"/>`;
   svg.innerHTML = html;
@@ -558,7 +535,7 @@ window.addEventListener('mouseup', e => {
       const to = linking.dir === 'out' ? other : linking.from;
       if (!edges.some(x => x.from === from && x.to === to)) {
         pushUndo();
-        if (addEdge(from, to)) { save(); toast('🔗 已连接（' + EDGE_META[edgeType(from, to)].name + '）'); }
+        if (addEdge(from, to)) { save(); toast('🔗 节点已连接，上游内容将流向下游'); }
       }
       linked = true;
     };
@@ -971,14 +948,8 @@ async function runChain() {
     frontier = nxt;
   }
   if (!order.length) { toast('当前节点没有下游节点：拖动输出端口连线后再试'); return; }
-  /* 链路预告：沿线统计各语义段，让用户在执行前知道这条链会做什么 */
-  const flow = {};
-  order.forEach(id => directUpstreams(id).forEach(u => {
-    if (seen.has(u.id) || u.id === start.id) { const et = EDGE_META[edgeType(u.id, id)]; flow[et.name] = (flow[et.name] || 0) + 1; }
-  }));
-  const flowTxt = Object.entries(flow).map(([k, v]) => v + '×' + k).join(' → ');
   chainBusy = true;
-  toast(`⚡ 链式生成开始 · 共 ${order.length} 个下游节点${flowTxt ? '（' + flowTxt + '）' : ''}`);
+  toast(`⚡ 链式生成开始 · 共 ${order.length} 个下游节点`);
   for (const id of order) {
     const n = nodes.find(x => x.id === id); if (!n) continue;
     selected = id; render(); openPanel();
@@ -1890,6 +1861,82 @@ async function exportFilm() {
 }
 $('tlExport').addEventListener('click', exportFilm);
 
+/* ============ 设置中心：模型供应商配置（读取/保存 /api/config） ============ */
+let settingsCache = null;
+async function openSettings() {
+  try { settingsCache = await api.getConfig(); } catch (_) { settingsCache = null; }
+  const p = (settingsCache && settingsCache.provider && settingsCache.provider.sensenova) || {};
+  $('smBase').value = p.baseUrl || '';
+  $('smKey').value = p.apiKey || '';
+  $('smText').value = p.textModel || '';
+  $('smImage').value = p.imageModel || '';
+  $('smVision').value = p.visionModel || '';
+  $('smTip').textContent = '';
+  $('settingsModal').classList.add('show');
+}
+function collectSettings() {
+  const base = (settingsCache && settingsCache) || {};
+  const p = {
+    baseUrl: $('smBase').value.trim(),
+    apiKey: $('smKey').value.trim(),
+    textModel: $('smText').value.trim(),
+    imageModel: $('smImage').value.trim(),
+    visionModel: $('smVision').value.trim(),
+  };
+  return { provider: { sensenova: p }, models: base.models };
+}
+async function saveSettings() {
+  const payload = collectSettings();
+  const r = await fetch('/api/config', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  settingsCache = payload;
+}
+function closeSettings() { $('settingsModal').classList.remove('show'); }
+function initSettings() {
+  const gear = document.querySelector('[title^="设置"]');
+  if (gear) gear.addEventListener('click', openSettings);
+  $('smClose').onclick = closeSettings;
+  $('smSave').onclick = async () => {
+    const b = $('smSave'); b.textContent = '保存中…';
+    try { await saveSettings(); $('smTip').textContent = '✓ 配置已保存'; $('smTip').style.color = 'var(--green)'; toast('⚙ 模型配置已保存'); await refreshVisionStatus(); }
+    catch (e) { $('smTip').textContent = '✗ 保存失败：' + e.message; $('smTip').style.color = '#f5c26b'; }
+    b.textContent = '保存配置';
+  };
+  $('smTest').onclick = async () => {
+    const tip = $('smTip');
+    tip.textContent = '⏳ 正在检测（先保存配置，再探测视觉通道）…'; tip.style.color = 'var(--text-dim)';
+    try {
+      await saveSettings();
+      const s = await (await fetch('/api/vision-status?force=1')).json();
+      tip.textContent = s.configured ? (s.ok ? '✓ 连通正常：视觉通道可用' : '✗ 通道繁忙：' + (s.lastError || '未知错误').slice(0, 80)) : '✗ 未配置 API Key';
+      tip.style.color = s.ok ? 'var(--green)' : '#f5c26b';
+    } catch (e) { tip.textContent = '✗ 检测失败：' + e.message; tip.style.color = '#f5c26b'; }
+  };
+}
+
+/* ============ 登录门：口令校验（/api/auth/*），未登录时 API 全部 401 ============ */
+function showLogin() {
+  const v = $('loginView');
+  if (v) { v.style.display = 'flex'; setTimeout(() => { const i = $('loginPwd'); if (i) i.focus(); }, 50); }
+}
+async function tryLogin() {
+  const pwd = $('loginPwd').value;
+  if (!pwd) { $('loginErr').textContent = '请输入访问口令'; return; }
+  $('loginBtn').textContent = '登录中…';
+  try {
+    const r = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pwd }) });
+    if (r.ok) { location.reload(); return; }
+    $('loginErr').textContent = (await r.json().catch(() => ({}))).error || '密码错误';
+  } catch (_) { $('loginErr').textContent = '网络错误，请重试'; }
+  $('loginBtn').textContent = '登 录';
+}
+function initLogin() {
+  $('loginBtn').onclick = tryLogin;
+  $('loginPwd').addEventListener('keydown', e => { if (e.key === 'Enter') tryLogin(); });
+}
+initSettings();
+initLogin();
+
 /* ============ 视觉参考通道状态灯 ============ */
 async function refreshVisionStatus() {
   try {
@@ -1908,6 +1955,11 @@ setInterval(refreshVisionStatus, 60 * 1000);
 
 /* ============ 初始化：拉取模型配置 + 从服务端加载项目 ============ */
 (async function init() {
+  // 登录门：未通过口令校验时只显示登录页，不加载画布数据
+  try {
+    const st = await (await fetch('/api/auth/status')).json();
+    if (!st.authed) { showLogin(); return; }
+  } catch (_) { showLogin(); return; }
   // 模型清单以服务端 data/config.json 为准（本地 GEN_TABS 仅作兜底默认值）
   try {
     const cfg = await api.getConfig();
