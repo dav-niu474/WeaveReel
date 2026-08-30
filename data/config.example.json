@@ -1,0 +1,17 @@
+{
+  "provider": {
+    "sensenova": {
+      "baseUrl": "https://token.sensenova.cn/v1",
+      "apiKey": "sk-你的密钥",
+      "textModel": "sensenova-6.8-flash-lite",
+      "imageModel": "sensenova-u1-fast",
+      "visionModel": "sensenova-6.8-flash-lite"
+    }
+  },
+  "models": {
+    "text": ["sensenova-6.8-flash-lite", "sensenova-6.7-flash-lite", "glm-5.2", "deepseek-v4-flash"],
+    "image": ["sensenova-u1-fast", "sensenova-u1.5-lite"],
+    "video": ["织影视频 V3（模拟）", "织影视频 V2 Turbo（模拟）"],
+    "audio": ["Mureka V9（模拟）", "Suno V4（模拟）"]
+  }
+}

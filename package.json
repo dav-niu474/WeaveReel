@@ -1,0 +1,13 @@
+{
+  "name": "weavereel",
+  "version": "1.0.0",
+  "description": "织影 WeaveReel — 节点式 AI 视频创作工作台（零依赖 Node 后端 + 原生前端）",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT"
+}

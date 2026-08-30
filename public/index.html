@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>织影 WeaveReel · AI 视频创作工作台</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- 顶栏 -->
+<div class="topbar">
+  <div class="topbar-left">
+    <div class="logo"><div class="dot">✦</div>织影 WeaveReel</div>
+    <div class="project-name">/ <b>夏日海边 · 野餐短片</b></div>
+  </div>
+  <div class="mode-switch">
+    <button id="msCanvas" class="active" onclick="switchMode('canvas')">🖥 画布</button>
+    <button id="msEditor" onclick="switchMode('editor')">▦ 编辑器</button>
+  </div>
+  <div class="topbar-right">
+    <button class="icon-btn" title="撤销 (Ctrl+Z)" onclick="undo()">↩</button>
+    <button class="icon-btn" title="重做 (Ctrl+Y)" onclick="redo()">↪</button>
+    <button class="icon-btn" title="新建画布" onclick="newCanvas()">✚</button>
+    <button class="icon-btn" title="自动布局" onclick="autoLayout()">⌗</button>
+    <button class="btn-primary" onclick="composeAll()">⚡ 合成视频</button>
+    <div class="avatar">A</div>
+  </div>
+</div>
+
+<!-- 画布 -->
+<div id="canvas-wrap">
+  <div id="viewport">
+    <svg id="wires"></svg>
+    <div class="guide" id="guideV"></div>
+    <div class="guide" id="guideH"></div>
+  </div>
+  <div class="empty-hint" id="emptyHint">
+    <div class="big">🎞</div>
+    <b>画布空空如也</b>
+    <span>在生成面板输入描述并点击 ↑ 开始创作<br>或从左侧素材库拖入节点 · 右键画布可快速创建</span>
+  </div>
+</div>
+
+<!-- 悬浮 AI 能力工具栏（跟随选中节点） -->
+<div class="aitb" id="aiToolbar">
+  <div style="display:flex;align-items:center;flex-wrap:wrap;justify-content:center;width:100%;row-gap:2px" id="aitbCaps"></div>
+  <div class="aitb-sep"></div>
+  <button class="aitb-btn" id="aitbMore" title="更多能力"><span class="ico">⋯</span></button>
+  <div class="aitb-sep"></div>
+  <button class="aitb-btn hl" onclick="capCompose()"><span class="ico">⚡</span>合成视频</button>
+  <button class="aitb-btn hl" title="从所选节点沿连线向下游逐级生成（上游输出作为下游输入）" onclick="runChain()"><span class="ico">⏩</span>链式生成</button>
+  <button class="aitb-btn" title="复制所选节点" onclick="dupSelected()"><span class="ico">⧉</span></button>
+  <button class="aitb-btn" title="上传替换所选节点素材" onclick="replaceSelected()"><span class="ico">🔄</span>替换</button>
+  <button class="aitb-btn" title="删除所选节点 (Delete)" onclick="deleteSelected()"><span class="ico">🗑</span></button>
+  <button class="aitb-btn" title="下载所选素材" onclick="downloadSelected()"><span class="ico">⬇</span></button>
+  <button class="aitb-btn" title="全屏预览" onclick="selected?openLB(selected):toast('请先选择节点')"><span class="ico">⤢</span></button>
+</div>
+
+<!-- 更多能力菜单 -->
+<div class="ctx-menu" id="moreMenu"></div>
+<!-- 快速创建 / 素材选择菜单 -->
+<div class="ctx-menu" id="quickMenu"></div>
+
+<!-- 底部生成面板（跟随选中节点） -->
+<div class="gpanel" id="genPanel">
+  <div class="g-tabs" id="gTabs">
+    <button data-tab="text">文本生成</button><span class="tsep"></span>
+    <button data-tab="image">图片生成</button><span class="tsep"></span>
+    <button data-tab="video">视频生成</button><span class="tsep"></span>
+    <button data-tab="audio">音频生成</button>
+    <span class="flex"></span>
+    <button class="mini" id="gExpand" title="放大">⤢</button>
+  </div>
+  <div class="g-body" id="gUploads" style="display:none">
+    <button class="g-up" onclick="document.getElementById('fileInput').click()" title="上传本地素材"><span class="ico">⬆</span>上传</button>
+    <button class="g-up" id="gPick" title="从素材库选择"><span class="ico">✦</span>选择</button>
+  </div>
+  <div class="g-inputwrap">
+    <textarea class="g-input" id="gInput" rows="3" placeholder=""></textarea>
+  </div>
+  <div class="g-foot">
+    <div class="g-left">
+      <select id="gModel" class="g-sel2" style="font-size:13px;padding:6px 10px"></select>
+      <select id="gRatio" class="g-sel2"></select>
+      <button class="g-sel" title="引用角色/素材" onclick="insertAt()"><b style="font-size:15px">@</b></button>
+    </div>
+    <div class="g-right">
+      <select id="gCount" class="g-sel2"></select>
+      <span class="g-cost">◆ <b id="gCost">4</b></span>
+      <button class="g-send" id="gSend" title="生成">↑</button>
+    </div>
+  </div>
+</div>
+<input type="file" id="fileInput" accept="image/*" style="display:none" onchange="onFilePicked(event)">
+
+<!-- 左侧素材库 -->
+<div class="sidebar">
+  <h3>节点素材库</h3>
+  <div class="vision-status" id="visionStatus">⚪ 视觉参考检测中…</div>
+  <div class="items" id="lib"></div>
+  <div class="hint">拖入节点 / 拖入图片文件上传<br>文件拖到节点上 = 替换素材<br>Ctrl+V 粘贴截图直接上传<br>选中节点 → 工具条能力 / 🔄 / 🗑<br>连线两侧自动传递内容：<br>上游文案/图片 → 下游生成参考<br>⚠ 上游变化 → 点击「同步」更新<br>⏩ 链式生成：沿连线逐级生成<br>拖动端口 / 连线 ⊕ 建立连接<br>拖线到空白 → 快速创建节点<br>双击图片 → 大图预览 / 下载<br>Ctrl+Z 撤销 · Ctrl+D 复制<br>右键画布 → 快速创建</div>
+</div>
+
+<!-- 缩放栏 -->
+<div class="zoombar">
+  <button onclick="zoomBy(-0.1)">−</button>
+  <span class="zoom-val" id="zoomVal">100%</span>
+  <button onclick="zoomBy(0.1)">＋</button>
+  <button class="txt" onclick="resetView()">适应画布</button>
+</div>
+
+<div class="toast" id="toast"></div>
+<div class="ctx-menu" id="ctxMenu">
+  <button onclick="ctxAction('add')">➕ 添加下游节点</button>
+  <button onclick="ctxAction('chain')">⏩ 从此节点链式生成</button>
+  <button onclick="ctxAction('prompt')">📋 查看生成提示词</button>
+  <button onclick="ctxAction('dup')">⧉ 复制节点</button>
+  <button onclick="ctxAction('replace')">🔄 替换素材</button>
+  <button class="danger" onclick="ctxAction('del')">🗑 删除节点</button>
+</div>
+
+<!-- 编辑器模式（时间线：由画布真实节点数据驱动） -->
+<div id="editorView">
+  <div class="ed-top">
+    <div class="ed-preview"><img id="edImg" src="" alt="预览"></div>
+    <div class="ed-inspector">
+      <h4>片段属性</h4>
+      <div class="row"><span>总时长</span><span id="edDurVal">—</span></div>
+      <div class="row"><span>转场</span><span>硬切 · 即时</span></div>
+      <div class="row"><span>调色风格</span><span>原片直出</span></div>
+      <div class="row"><span>背景音乐</span><span id="edBGMVal">未添加</span></div>
+      <div class="row"><span>字幕</span><span id="edSubVal">—</span></div>
+      <div class="row" style="border:none"><span>导出分辨率</span><span>720P · 30fps · webm</span></div>
+    </div>
+  </div>
+  <div class="timeline" id="timeline">
+    <div class="tl-tools">
+      <button class="play" id="playBtn">▶ 播放</button>
+      <button id="tlExport">⬇ 导出成片</button>
+      <span class="tl-total" id="tlTotal"></span>
+    </div>
+    <div class="track"><div class="tname">视频</div><div class="lane" id="tlVideo"></div></div>
+    <div class="track"><div class="tname">音频</div><div class="lane" id="tlAudio"></div></div>
+    <div class="track"><div class="tname">字幕</div><div class="lane" id="tlSub"></div></div>
+    <div class="playhead" id="playhead"></div>
+  </div>
+</div>
+
+<!-- 灯箱预览 -->
+<div id="lightbox" onclick="if(event.target===this)closeLB()">
+  <div class="lb-frame"><img id="lbImg" src="" alt=""></div>
+  <div class="lb-cap" id="lbCap"></div>
+  <div class="lb-actions">
+    <button class="lb-btn" onclick="closeLB()">关闭</button>
+    <button class="lb-btn lb-acc" id="lbDl">下载素材</button>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
