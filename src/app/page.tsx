@@ -26,6 +26,7 @@ export default function Home() {
                     <button className="icon-btn" title="新建画布" onClick={call("newCanvas")}>✚</button>
                     <button className="icon-btn" title="自动布局" onClick={call("autoLayout")}>⌗</button>
                     <button className="btn-save" id="saveBtn" title="保存画布 (Ctrl+S)" onClick={call("saveCanvas")}>💾 保存</button>
+                    <button className="btn-save" title="作品库：历史生成的作品">🖼 作品库</button>
                     <button className="icon-btn" title="设置 · 模型供应商" onClick={call("openSettings")}>⚙</button>
                     <button className="btn-primary" onClick={call("composeAll")}>⚡ 一键成片</button>
                     <div className="avatar">A</div>
@@ -104,7 +105,6 @@ export default function Home() {
             <div className="dock" id="dock">
                 <button className="dock-btn accent" id="dockAdd" title="新增：节点类型与场景模板">＋</button>
                 <button className="dock-btn" id="dockAssets" title="资产库：项目中产生的图片/视频资产">🧊</button>
-                <button className="dock-btn" id="dockWorks" title="作品库：历史生成的作品">🖼</button>
                 <button className="dock-btn" id="dockSubjects" title="主体库：预置 IP 形象">🧑‍🎤</button>
                 <button className="dock-btn" id="dockStock" title="素材库：场景素材">🗂</button>
                 <button className="dock-dot" id="dockVision" title="视觉参考通道状态">●</button>
@@ -154,6 +154,18 @@ export default function Home() {
                     <input id="loginPwd" type="password" placeholder="访问口令" />
                     <button id="loginBtn">登 录</button>
                     <div className="login-err" id="loginErr"></div>
+                </div>
+            </div>
+
+            {/* 作品库弹窗：历史生成浏览 + 勾选发布到素材库 */}
+            <div className="works-modal" id="worksModal">
+                <div className="wm-head"><b>🖼 作品库 · 历史生成</b><span id="wmCount" className="wm-count"></span><button id="wmClose" title="关闭">✕</button></div>
+                <div className="wm-grid" id="wmGrid"><div className="dp-empty">加载中…</div></div>
+                <div className="sm-foot">
+                    <span className="dp-empty" style={{ padding: 0 }}>勾选作品后：</span>
+                    <button id="wmAdd" className="btn-save">⬎ 加入画布</button>
+                    <span style={{ flex: 1 }}></span>
+                    <button id="wmPub" className="btn-primary">📤 发布到素材库</button>
                 </div>
             </div>
 

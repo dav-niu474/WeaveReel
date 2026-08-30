@@ -1147,15 +1147,15 @@ $('gSend').addEventListener('click', () => {
 /* ============ 右侧 Dock：新增 / 资产库 / 主体库 / 素材库 ============ */
 let assetsCache = null;   // { subjects, scenes } 预置资产
 let activeDock = null;    // 'add' | 'assets' | 'subjects' | 'stock'
-const DOCK_TITLES = { add: '新增节点', assets: '资产库', works: '作品库 · 历史生成', subjects: '主体库', stock: '素材库' };
+const DOCK_TITLES = { add: '新增节点', assets: '资产库', subjects: '主体库', stock: '素材库' };
 function toggleDock(section) {
   activeDock = activeDock === section ? null : section;
   document.querySelectorAll('.dock-btn').forEach(x => x.classList.remove('active'));
   if (!activeDock) { $('dockPanel').classList.remove('show'); return; }
-  $(section === 'add' ? 'dockAdd' : section === 'assets' ? 'dockAssets' : section === 'works' ? 'dockWorks' : section === 'subjects' ? 'dockSubjects' : 'dockStock').classList.add('active');
+  $(section === 'add' ? 'dockAdd' : section === 'assets' ? 'dockAssets' : section === 'subjects' ? 'dockSubjects' : 'dockStock').classList.add('active');
   $('dpTitle').textContent = DOCK_TITLES[section];
   $('dockPanel').classList.add('show');
-  ({ add: renderDockAdd, assets: renderDockAssets, works: renderDockWorks, subjects: renderDockSubjects, stock: renderDockStock })[section]();
+  ({ add: renderDockAdd, assets: renderDockAssets, subjects: renderDockSubjects, stock: renderDockStock })[section]();
 }
 /* 在画布中部空白处新增节点并选中 */
 function addNodeOfType(type) {
@@ -1214,44 +1214,60 @@ function renderDockAssets() {
     grid.appendChild(d);
   });
 }
-/* 面板：作品库（历史生成，可勾选发布到素材库） */
+/* ============ 作品库：顶栏入口 + 居中弹窗（历史生成，勾选发布到素材库） ============ */
 let worksSel = new Set();
-async function renderDockWorks() {
-  const box = $('dpBody');
-  box.innerHTML = '<div class="dp-sec">历史生成的作品 · 点击勾选</div><div class="dp-grid" id="dpWorks"><div class="dp-empty">加载中…</div></div>' +
-    '<div class="dp-actions"><button class="dp-act" id="dwAdd">⬎ 加入画布</button><button class="dp-act pri" id="dwPub">📤 发布到素材库</button></div>';
+function openWorksModal() {
+  worksSel.clear();
+  $('worksModal').classList.add('show');
+  renderWorksGrid();
+}
+function closeWorksModal() { $('worksModal').classList.remove('show'); }
+async function renderWorksGrid() {
+  const grid = $('wmGrid');
+  grid.innerHTML = '<div class="dp-empty">加载中…</div>';
   try {
     const d = await api.getWorks();
     const list = d.works || [];
-    const grid = box.querySelector('#dpWorks');
     grid.innerHTML = list.length ? '' : '<div class="dp-empty">还没有生成记录：跑一次生成就会出现在这里</div>';
     list.forEach(w => {
       const d = document.createElement('div');
-      d.className = 'dp-tile' + (w.published ? ' pub' : '') + (worksSel.has(w.id) ? ' sel' : '');
-      d.title = (w.prompt || '').slice(0, 80) + (w.published ? '（已发布到素材库）' : '');
-      d.innerHTML = '<div class="dp-thumb"><img src="' + w.url + '" loading="lazy">' + (w.published ? '<i class="dp-flag">已发布</i>' : '') + '</div><span>' + (w.published ? '已发布' : new Date(w.createdAt).toLocaleDateString('zh-CN')) + '</span>';
+      d.className = 'wm-tile' + (w.published ? ' pub' : '') + (worksSel.has(w.id) ? ' sel' : '');
+      d.title = (w.prompt || '').slice(0, 100) + (w.published ? '（已发布到素材库）' : '');
+      d.innerHTML = '<div class="wm-thumb"><img src="' + w.url + '" loading="lazy">' + (w.published ? '<i class="dp-flag">已发布</i>' : '') + '</div>' +
+        '<div class="wm-meta"><span class="wm-prompt">' + esc((w.prompt || '').slice(0, 26)) + '</span><span class="wm-time">' + new Date(w.createdAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) + '</span></div>';
       d.onclick = () => { worksSel.has(w.id) ? worksSel.delete(w.id) : worksSel.add(w.id); d.classList.toggle('sel'); };
       grid.appendChild(d);
     });
-    box.querySelector('#dwAdd').onclick = () => {
-      if (!worksSel.size) { toast('请先勾选作品'); return; }
-      list.filter(w => worksSel.has(w.id)).forEach(w => addAssetNode(w.url, '作品', w.prompt || ''));
-      worksSel.clear(); renderDockWorks();
-      toast('⬎ 已把选中作品加入画布');
-    };
-    box.querySelector('#dwPub').onclick = async () => {
-      if (!worksSel.size) { toast('请先勾选要发布的作品'); return; }
-      const ids = [...worksSel];
-      try {
-        await api.publishWorks(ids, true);
-        worksSel.clear();
-        toast('📤 已发布 ' + ids.length + ' 个作品到素材库（左侧 🗂 可查看）');
-        renderDockWorks();
-      } catch (e) { toast('发布失败：' + e.message); }
-    };
+    $('wmCount').textContent = list.length ? '共 ' + list.length + ' 个作品 · 已勾选 ' + worksSel.size : '';
   } catch (e) {
-    box.querySelector('#dpWorks').innerHTML = '<div class="dp-empty">加载失败：' + e.message + '</div>';
+    grid.innerHTML = '<div class="dp-empty">加载失败：' + e.message + '</div>';
   }
+}
+function initWorksModal() {
+  const wmb = document.querySelector('[title^="作品库"]');
+  if (wmb) wmb.addEventListener('click', openWorksModal);
+  $('wmClose').onclick = closeWorksModal;
+  $('wmAdd').onclick = () => {
+    if (!worksSel.size) { toast('请先勾选作品'); return; }
+    const ids = [...worksSel];
+    ids.forEach(() => {});
+    (async () => {
+      const d = await api.getWorks();
+      (d.works || []).filter(w => worksSel.has(w.id)).forEach(w => addAssetNode(w.url, '作品', w.prompt || ''));
+      worksSel.clear(); closeWorksModal();
+      toast('⬎ 已把选中作品加入画布');
+    })();
+  };
+  $('wmPub').onclick = async () => {
+    if (!worksSel.size) { toast('请先勾选要发布的作品'); return; }
+    const ids = [...worksSel];
+    try {
+      await api.publishWorks(ids, true);
+      worksSel.clear();
+      toast('📤 已发布 ' + ids.length + ' 个作品到素材库（🗂 素材库可查看）');
+      renderWorksGrid();
+    } catch (e) { toast('发布失败：' + e.message); }
+  };
 }
 /* 面板：主体库 / 素材库（预置资产） */
 function renderPresetGrid(list, box, labelPrefix) {
@@ -1303,7 +1319,7 @@ async function renderDockStock() {
 }
 function closeDock() { if (activeDock) toggleDock(activeDock); }
 function initDock() {
-  [['dockAdd', 'add'], ['dockAssets', 'assets'], ['dockWorks', 'works'], ['dockSubjects', 'subjects'], ['dockStock', 'stock']]
+  [['dockAdd', 'add'], ['dockAssets', 'assets'], ['dockSubjects', 'subjects'], ['dockStock', 'stock']]
     .forEach(([id, sec]) => { $(id).onclick = () => toggleDock(sec); });
   $('dpClose').onclick = () => toggleDock(activeDock);
   $('dockVision').onclick = () => { toast($('dockVision').title || '视觉参考通道状态未知'); };
@@ -2104,6 +2120,7 @@ function initLogin() {
   $('loginPwd').addEventListener('keydown', e => { if (e.key === 'Enter') tryLogin(); });
 }
 initSettings();
+initWorksModal();
 initLogin();
 
 /* ============ 视觉参考通道状态灯 ============ */
