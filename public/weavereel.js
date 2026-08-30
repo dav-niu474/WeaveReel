@@ -50,6 +50,11 @@ const api = {
     if (!r.ok) throw new Error('GET /api/templates ' + r.status);
     return r.json();
   },
+  async getAssets() {
+    const r = await fetch('/api/assets');
+    if (!r.ok) throw new Error('GET /api/assets ' + r.status);
+    return r.json();
+  },
 };
 const sceneURL = (seed) => '/api/scene/' + (Math.abs(seed) % 97);
 const waveURL = () => '/api/wave';
@@ -1158,15 +1163,108 @@ $('gSend').addEventListener('click', () => {
   save();
 });
 
-/* ============ 素材库：四种内容类型（九宫格 / 合成视频由能力生成，不在库中） ============ */
-const lib = $('lib');
-Object.entries(TYPES).filter(([k]) => !['nine', 'edit'].includes(k)).forEach(([k, t]) => {
-  const d = document.createElement('div');
-  d.className = 'lib-item'; d.draggable = true;
-  d.innerHTML = `<div class="lib-ico" style="background:${t.color}22;color:${t.color}">${t.icon}</div>${t.label}${k === 'video' ? '<span style="font-size:10px;color:var(--text-dim);margin-left:4px">模拟</span>' : ''}`;
-  d.addEventListener('dragstart', ev => ev.dataTransfer.setData('type', k));
-  lib.appendChild(d);
-});
+/* ============ 右侧 Dock：新增 / 资产库 / 主体库 / 素材库 ============ */
+let assetsCache = null;   // { subjects, scenes } 预置资产
+let activeDock = null;    // 'add' | 'assets' | 'subjects' | 'stock'
+const DOCK_TITLES = { add: '新增节点', assets: '资产库 · 项目产出', subjects: '主体库 · IP 形象', stock: '素材库 · 场景素材' };
+function toggleDock(section) {
+  activeDock = activeDock === section ? null : section;
+  document.querySelectorAll('.dock-btn').forEach(x => x.classList.remove('active'));
+  if (!activeDock) { $('dockPanel').classList.remove('show'); return; }
+  $(section === 'add' ? 'dockAdd' : section === 'assets' ? 'dockAssets' : section === 'subjects' ? 'dockSubjects' : 'dockStock').classList.add('active');
+  $('dpTitle').textContent = DOCK_TITLES[section];
+  $('dockPanel').classList.add('show');
+  ({ add: renderDockAdd, assets: renderDockAssets, subjects: renderDockSubjects, stock: renderDockStock })[section]();
+}
+/* 在画布中部空白处新增节点并选中 */
+function addNodeOfType(type) {
+  pushUndo();
+  const spot = findSpot(Math.round((innerWidth / 2 - panX) / scale - 170), Math.round((innerHeight / 2 - panY) / scale - 150), 360, 260);
+  const n = { id: uid(), type, x: spot.x, y: spot.y, status: 'idle', prompt: '双击或点击下方输入框，描述这个节点…', dur: type === 'video' ? '5s' : '—', vseed: Math.floor(Math.random() * 97) };
+  nodes.push(n); selected = n.id; render(); openPanel(); save();
+  toast('➕ 已新增' + TYPES[type].label + '节点，输入描述后点 ↑ 运行');
+}
+/* 用资产 url 新增图片节点 */
+function addAssetNode(url, label, prompt) {
+  pushUndo();
+  const spot = findSpot(Math.round((innerWidth / 2 - panX) / scale - 170), Math.round((innerHeight / 2 - panY) / scale - 150), 360, 260);
+  const n = { id: uid(), type: 'image', x: spot.x, y: spot.y, status: 'idle', prompt: prompt || label || '双击或点击下方输入框，描述这个节点…', label: label || '图片' };
+  if (url) n.url = url; else n.vseed = Math.floor(Math.random() * 97);
+  nodes.push(n); selected = n.id; render(); openPanel(); save();
+}
+/* 面板：新增（节点类型 + 场景模板） */
+function renderDockAdd() {
+  const box = $('dpBody');
+  box.innerHTML = '<div class="dp-sec">节点类型 · 点击新增</div><div class="dp-grid" id="dpTypes"></div>' +
+    '<div class="dp-sec">场景模板 · 一键套用</div><div class="dp-tps" id="dpTps">' +
+    (tplCache ? '' : '<div class="dp-empty">模板加载中…</div>') + '</div>';
+  const types = box.querySelector('#dpTypes');
+  Object.entries(TYPES).filter(([k]) => !['nine', 'edit'].includes(k)).forEach(([k, t]) => {
+    const d = document.createElement('div');
+    d.className = 'dp-tile';
+    d.innerHTML = '<div class="dp-thumb" style="background:' + t.color + '18;color:' + t.color + ';font-size:20px;display:flex;align-items:center;justify-content:center">' + t.icon + '</div><span>' + t.label + (k === 'video' ? '<i style="font-style:normal;opacity:.6"> 模拟</i>' : '') + '</span>';
+    d.onclick = () => addNodeOfType(k);
+    types.appendChild(d);
+  });
+  if (tplCache) renderTemplates(tplCache, box.querySelector('#dpTps'));
+}
+/* 面板：资产库（画布里一切真实图片/视频资产） */
+function renderDockAssets() {
+  const box = $('dpBody');
+  const urls = [];
+  nodes.forEach(n => {
+    [n.url, ...(n.urls || [])].forEach(u => { if (u && !u.startsWith('/api/') && !u.startsWith('data:') && !urls.includes(u)) urls.push(u); });
+  });
+  box.innerHTML = '<div class="dp-sec">项目产生的图片/视频 · 点击加入画布</div>' +
+    '<div class="dp-grid" id="dpAssets"></div>' +
+    (urls.length ? '' : '<div class="dp-empty">还没有资产：生成或上传后自动汇集到这里</div>');
+  const grid = box.querySelector('#dpAssets');
+  const up = document.createElement('div');
+  up.className = 'dp-tile';
+  up.innerHTML = '<div class="dp-thumb" style="display:flex;align-items:center;justify-content:center;font-size:20px">⬆</div><span>上传素材</span>';
+  up.onclick = () => $('fileInput').click();
+  grid.appendChild(up);
+  urls.forEach(u => {
+    const d = document.createElement('div');
+    d.className = 'dp-tile';
+    const isVideo = /\.(mp4|webm)$/i.test(u);
+    d.innerHTML = (isVideo ? '<div class="dp-thumb">🎬</div>' : '<div class="dp-thumb"><img src="' + u + '" loading="lazy"></div>') + '<span>' + u.split('/').pop().slice(0, 14) + '</span>';
+    d.onclick = () => addAssetNode(u, '资产');
+    grid.appendChild(d);
+  });
+}
+/* 面板：主体库 / 素材库（预置资产） */
+function renderPresetGrid(list, box, labelPrefix) {
+  const grid = box.querySelector('#dpAssets');
+  list.forEach(pc => {
+    const d = document.createElement('div');
+    d.className = 'dp-tile';
+    d.innerHTML = '<div class="dp-thumb"><img src="' + sceneURL(pc.seed) + '" loading="lazy"></div><span>' + esc(pc.name) + '</span>';
+    d.title = pc.prompt;
+    d.onclick = () => addAssetNode(null, labelPrefix + ' · ' + pc.name, pc.prompt);
+    grid.appendChild(d);
+  });
+}
+function renderDockSubjects() {
+  const box = $('dpBody');
+  box.innerHTML = '<div class="dp-sec">预置 IP 形象 · 点击加入画布作为主体参考</div><div class="dp-grid" id="dpAssets"></div>' +
+    (assetsCache ? '' : '<div class="dp-empty">加载中…</div>');
+  if (assetsCache) renderPresetGrid(assetsCache.subjects, box, '主体');
+}
+function renderDockStock() {
+  const box = $('dpBody');
+  box.innerHTML = '<div class="dp-sec">场景素材 · 点击加入画布</div><div class="dp-grid" id="dpAssets"></div>' +
+    (assetsCache ? '' : '<div class="dp-empty">加载中…</div>');
+  if (assetsCache) renderPresetGrid(assetsCache.scenes, box, '素材');
+}
+function initDock() {
+  [['dockAdd', 'add'], ['dockAssets', 'assets'], ['dockSubjects', 'subjects'], ['dockStock', 'stock']]
+    .forEach(([id, sec]) => { $(id).onclick = () => toggleDock(sec); });
+  $('dpClose').onclick = () => toggleDock(activeDock);
+  $('dockVision').onclick = () => { toast($('dockVision').title || '视觉参考通道状态未知'); };
+  api.getAssets().then(d => { assetsCache = d; if (activeDock === 'subjects') renderDockSubjects(); if (activeDock === 'stock') renderDockStock(); }).catch(() => {});
+}
+initDock();
 wrap.addEventListener('dragover', e => e.preventDefault());
 /* 图例折叠 */
 const legendEl = $('legend');
@@ -1181,8 +1279,7 @@ function tplMeta(tpl) {
   tpl.nodes.forEach(n => { cnt[n.type] = (cnt[n.type] || 0) + 1; });
   return Object.entries(cnt).map(([k, v]) => TYPE_LABEL[k] + '×' + v).join(' · ');
 }
-function renderTemplates(list) {
-  const box = $('tplLib');
+function renderTemplates(list, box) {
   if (!box) return;
   box.innerHTML = '';
   list.forEach(tpl => {
@@ -1215,8 +1312,8 @@ function applyTemplate(tpl) {
   toast('📦 已套用模板「' + tpl.name + '」，Ctrl+Z 可撤销');
 }
 api.getTemplates()
-  .then(d => { tplCache = d.templates || []; renderTemplates(tplCache); })
-  .catch(() => { const b = $('tplLib'); if (b) b.innerHTML = '<div class="tpl-loading">模板加载失败，刷新重试</div>'; });
+  .then(d => { tplCache = d.templates || []; if (activeDock === 'add') renderDockAdd(); })
+  .catch(() => {});
 
 /* ============ 复制所选（工具条 ⧉ / Ctrl+D 共用） ============ */
 function dupSelected() {
@@ -1577,7 +1674,8 @@ function switchMode(m) {
   $('msCanvas').classList.toggle('active', !ed);
   $('msEditor').classList.toggle('active', ed);
   wrap.style.display = ed ? 'none' : 'block';
-  document.querySelector('.sidebar').style.display = ed ? 'none' : 'flex';
+  document.getElementById('dock').style.display = ed ? 'none' : 'flex';
+  if (ed) document.getElementById('dockPanel').classList.remove('show');
   document.querySelector('.zoombar').style.display = ed ? 'none' : 'flex';
   hideFloaters();
   $('editorView').classList.toggle('show', ed);
@@ -1775,11 +1873,13 @@ $('tlExport').addEventListener('click', exportFilm);
 async function refreshVisionStatus() {
   try {
     const s = await (await fetch('/api/vision-status')).json();
-    const el = $('visionStatus'); if (!el) return;
-    if (!s.configured) { el.textContent = '⚪ 视觉参考未配置'; el.style.color = 'var(--text-dim)'; return; }
-    el.textContent = s.ok ? '🟢 视觉参考通道：可用' : '🔴 视觉参考通道：繁忙 · 自动重试中';
-    el.title = s.lastError ? '最近错误：' + s.lastError : '';
-    el.style.color = s.ok ? 'var(--green)' : '#f5c26b';
+    const dot = $('dockVision'), row = $('dpVision');
+    if (!dot) return;
+    const txt = !s.configured ? '⚪ 视觉参考未配置' : s.ok ? '🟢 视觉参考通道：可用' : '🔴 视觉参考通道：繁忙 · 自动重试中';
+    const color = !s.configured ? 'var(--text-dim)' : s.ok ? 'var(--green)' : '#f5c26b';
+    dot.style.color = color;
+    dot.title = txt + (s.lastError ? '（最近错误：' + s.lastError + '）' : '');
+    if (row) { row.textContent = txt; row.title = dot.title; row.style.color = color; }
   } catch (_) {}
 }
 refreshVisionStatus();
