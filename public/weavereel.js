@@ -254,7 +254,8 @@ function renderNode(n) {
       <button class="ndel" data-del="${n.id}" title="删除节点 (Delete)">✕</button>
       <div class="port in"  data-node="${n.id}" data-dir="in"  title="输入">＋</div>
       <div class="port out" data-node="${n.id}" data-dir="out" title="输出">＋</div>
-    </div>`;
+    </div>
+    ${n.type !== 'edit' ? `<button class="qcreate" data-qc="${n.id}" title="创建下游节点（自动连线）">＋</button>` : ''}`;
   return el;
 }
 function render() {
@@ -450,6 +451,9 @@ vp.addEventListener('mousedown', e => {
     if (tn && tn.status !== 'running') { pushUndo(); startGen(tn, '同步上游'); }
     return;
   }
+  // 节点右侧「＋」快速创建下游节点
+  const qcBtn = e.target.closest('.qcreate');
+  if (qcBtn) { e.stopPropagation(); e.preventDefault(); quickCreateDown(qcBtn.dataset.qc); return; }
   // 分镜格子「⬆ 提升为镜头」
   const promoBtn = e.target.closest('.cell-promote');
   if (promoBtn) { e.stopPropagation(); e.preventDefault(); promoteCell(promoBtn.dataset.nine, +promoBtn.dataset.idx); return; }
@@ -1321,6 +1325,18 @@ async function renderDockStock() {
   }
 }
 function closeDock() { if (activeDock) toggleDock(activeDock); }
+/* 节点右侧「＋」：选中并在右侧创建已连线的下游节点 */
+function quickCreateDown(id) {
+  const n = nodes.find(x => x.id === id); if (!n || n.type === 'edit') return;
+  const map = { text: 'image', image: 'video', nine: 'image', video: 'edit', audio: 'edit' };
+  const type = map[n.type] || 'image';
+  pushUndo();
+  const spot = findSpot(n.x + 480, n.y, 380, 280);
+  const c = { id: uid(), type, x: spot.x, y: spot.y, status: 'idle', prompt: '双击或点击下方输入框，描述这个节点…', dur: type === 'video' ? '5s' : '—', vseed: Math.floor(Math.random() * 97) };
+  nodes.push(c); addEdge(n.id, c.id);
+  selected = c.id; render(); openPanel(); save();
+  toast('➕ 已创建' + TYPES[type].label + '节点并连线，输入描述后点 ↑ 运行');
+}
 function initDock() {
   [['dockAdd', 'add'], ['dockAssets', 'assets'], ['dockSubjects', 'subjects'], ['dockStock', 'stock']]
     .forEach(([id, sec]) => { $(id).onclick = () => toggleDock(sec); });
