@@ -40,7 +40,7 @@ export default function Home() {
                 <div className="empty-hint" id="emptyHint">
                     <div className="big">🎞</div>
                     <b>画布空空如也</b>
-                    <span>在生成面板输入描述并点击 ↑ 开始创作<br />或从左侧素材库拖入节点 · 右键画布可快速创建</span>
+                    <span>从左侧「场景模板」一键套用开始创作<br />或在生成面板输入描述点击 ↑ · 右键画布可快速创建</span>
                 </div>
             </div>
 
@@ -95,11 +95,13 @@ export default function Home() {
             </div>
             <input type="file" id="fileInput" accept="image/*" style={{ display: "none" }} onChange={(e) => (window as unknown as Engine).onFilePicked?.(e)} />
 
-            {/* 左侧素材库 */}
+            {/* 左侧素材库 + 场景模板库 */}
             <div className="sidebar">
                 <h3>节点素材库</h3>
                 <div className="vision-status" id="visionStatus">⚪ 视觉参考检测中…</div>
                 <div className="items" id="lib"></div>
+                <h3 style={{ marginTop: "14px" }}>场景模板 <span style={{ fontSize: "11px", fontWeight: 400, opacity: 0.6 }}>点击一键套用</span></h3>
+                <div className="tpls" id="tplLib"><div className="tpl-loading">模板加载中…</div></div>
                 <div className="hint">拖入节点 / 拖入图片文件上传<br />文件拖到节点上 = 替换素材<br />Ctrl+V 粘贴截图直接上传<br />选中节点 → 工具条能力 / 🔄 / 🗑<br />连线两侧自动传递内容：<br />上游文案/图片 → 下游生成参考<br />⚠ 上游变化 → 点击「同步」更新<br />⏩ 链式生成：沿连线逐级生成<br />拖动端口 / 连线 ⊕ 建立连接<br />拖线到空白 → 快速创建节点<br />双击图片 → 大图预览 / 下载<br />Ctrl+Z 撤销 · Ctrl+D 复制<br />右键画布 → 快速创建</div>
             </div>
 

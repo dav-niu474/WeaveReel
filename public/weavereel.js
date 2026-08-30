@@ -45,6 +45,11 @@ const api = {
     if (!r.ok) throw new Error('GET /api/tasks ' + r.status);
     return r.json();
   },
+  async getTemplates() {
+    const r = await fetch('/api/templates');
+    if (!r.ok) throw new Error('GET /api/templates ' + r.status);
+    return r.json();
+  },
 };
 const sceneURL = (seed) => '/api/scene/' + (Math.abs(seed) % 97);
 const waveURL = () => '/api/wave';
@@ -731,6 +736,50 @@ Object.entries(TYPES).forEach(([k, t]) => {
 });
 wrap.addEventListener('dragover', e => e.preventDefault());
 /* 文件/节点拖放的 drop 处理统一在「上传」一节 */
+
+/* ============ 场景模板库（一键套用，Ctrl+Z 可撤销） ============ */
+let tplCache = null;
+const TYPE_LABEL = Object.fromEntries(Object.entries(TYPES).map(([k, t]) => [k, t.label]));
+function tplMeta(tpl) {
+  const cnt = {};
+  tpl.nodes.forEach(n => { cnt[n.type] = (cnt[n.type] || 0) + 1; });
+  return Object.entries(cnt).map(([k, v]) => TYPE_LABEL[k] + '×' + v).join(' · ');
+}
+function renderTemplates(list) {
+  const box = $('tplLib');
+  if (!box) return;
+  box.innerHTML = '';
+  list.forEach(tpl => {
+    const d = document.createElement('div');
+    d.className = 'tpl';
+    d.innerHTML = `<div class="tpl-top"><span class="tpl-ico">${tpl.icon}</span>${esc(tpl.name)}</div>
+      <div class="tpl-desc">${esc(tpl.desc)}</div>
+      <div class="tpl-meta">${tpl.nodes.length} 节点 · ${tplMeta(tpl)} → 点击套用</div>`;
+    d.addEventListener('click', () => applyTemplate(tpl));
+    box.appendChild(d);
+  });
+}
+/* 套用模板：重新分配节点 id 与随机 vseed（同一模板每次长出不同画面），整体一步可撤销 */
+function applyTemplate(tpl) {
+  pushUndo();
+  const idMap = {};
+  tpl.nodes.forEach(n => { idMap[n.id] = uid(); });
+  nodes = tpl.nodes.map(n => {
+    const fresh = { ...n, id: idMap[n.id], status: 'idle', progress: 0 };
+    delete fresh.srcState; delete fresh.urls; delete fresh.url;
+    // 媒体节点每次套用都换随机 seed：同一模板长出不同画面
+    if (['image', 'nine', 'video'].includes(fresh.type)) fresh.vseed = Math.floor(Math.random() * 97);
+    return fresh;
+  });
+  edges = tpl.edges.map(e => ({ from: idMap[e.from], to: idMap[e.to] }));
+  selected = null; selectedEdge = null;
+  render(); hideFloaters(); save();
+  setTimeout(resetView, 30);
+  toast('📦 已套用模板「' + tpl.name + '」，Ctrl+Z 可撤销');
+}
+api.getTemplates()
+  .then(d => { tplCache = d.templates || []; renderTemplates(tplCache); })
+  .catch(() => { const b = $('tplLib'); if (b) b.innerHTML = '<div class="tpl-loading">模板加载失败，刷新重试</div>'; });
 
 /* ============ 复制所选（工具条 ⧉ / Ctrl+D 共用） ============ */
 function dupSelected() {

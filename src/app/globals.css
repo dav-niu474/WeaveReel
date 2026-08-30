@@ -165,6 +165,14 @@
   .lib-item{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:10px;cursor:grab;font-size:13px;transition:.15s;border:1px dashed transparent}
   .lib-item:hover{background:var(--card-hover);border-color:var(--border)}
   .lib-ico{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+  .tpls{flex:1;overflow-y:auto;padding:0 10px 10px;display:flex;flex-direction:column;gap:8px}
+  .tpl-loading{font-size:11px;color:var(--text-dim);padding:6px 4px}
+  .tpl{border:1px solid var(--border);border-radius:10px;padding:9px 10px;cursor:pointer;transition:.15s;background:rgba(255,255,255,.02)}
+  .tpl:hover{background:var(--card-hover);border-color:#4f8cff66;transform:translateY(-1px)}
+  .tpl-top{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600}
+  .tpl-top .tpl-ico{width:24px;height:24px;border-radius:7px;background:#4f8cff22;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0}
+  .tpl-desc{font-size:10.5px;color:var(--text-dim);line-height:1.5;margin-top:4px}
+  .tpl-meta{font-size:10px;color:#4f8cff;margin-top:5px;opacity:.85}
   .hint{padding:10px 14px;font-size:11px;color:var(--text-dim);line-height:1.8;border-top:1px solid var(--border)}
 
   /* toast / 菜单 */

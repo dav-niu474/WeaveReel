@@ -40,6 +40,11 @@ npm run deploy:cf
 
 ## 功能
 
+### 场景模板库（一键套用）
+- 左侧栏内置 6 套不同场景的预连线画布模板：旅行 Vlog、美食探店、产品发布、知识科普、情感短剧、宠物日常
+- 每套模板是一个完整创作流水线（文案 → 分镜 → 画面 → 合成），点击即整张画布套用，`Ctrl+Z` 可撤销
+- 媒体节点每次套用自动换随机 seed，同一模板每次长出不同画面；文案节点预填示例文案，可直接「⏩ 链式生成」跑通全链
+
 ### 画布模式
 - 节点类型：文本 / 图片 / 九宫格（含 2/4 格变体）/ 视频 / 音频 / 合成视频
 - 连线：拖动节点两侧 ＋ 端口连接；拖到空白处快速创建并连接；右键连线删除
@@ -99,6 +104,7 @@ npm run deploy:cf
 | POST | `/api/upload` | 上传素材（raw body，`X-Filename` 头） |
 | POST | `/api/generate` | 创建生成任务 `{type, prompt, seed, count, model, ratio, linkSeed, context:{texts[],images[]}}` |
 | GET | `/api/tasks/:id` | 任务进度与结果 |
+| GET | `/api/templates` | 场景模板库（预连线画布模板） |
 | GET | `/api/vision-status` | 视觉参考通道可用性（后台每 5 分钟自动探测） |
 | GET | `/api/compose` | 合成片胶片条预览（`?frames=/uploads/a.jpg,...`） |
 | GET | `/api/scene/:seed` | 服务端生成风景占位图（SVG） |
