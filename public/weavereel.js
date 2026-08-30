@@ -1183,7 +1183,8 @@ function renderDockAdd() {
     d.className = 'dp-tile'; d.draggable = true;
     d.innerHTML = '<div class="dp-thumb" style="background:' + t.color + '18;color:' + t.color + ';font-size:20px;display:flex;align-items:center;justify-content:center">' + t.icon + '</div><span>' + t.label + (k === 'video' ? '<i style="font-style:normal;opacity:.6"> 模拟</i>' : '') + '</span>';
     d.onclick = () => addNodeOfType(k);
-    d.addEventListener('dragstart', ev => { ev.dataTransfer.setData('type', k); closeDock(); });   // 拖到画布任意位置落点创建
+    d.addEventListener('dragstart', ev => ev.dataTransfer.setData('type', k));   // 拖到画布任意位置落点创建
+    d.addEventListener('dragend', () => closeDock());   // 落下或取消拖拽后收起面板
     types.appendChild(d);
   });
 }
@@ -1210,7 +1211,8 @@ function renderDockAssets() {
     d.innerHTML = (isVideo ? '<div class="dp-thumb">🎬</div>' : '<div class="dp-thumb"><img src="' + u + '" loading="lazy"></div>') + '<span>' + u.split('/').pop().slice(0, 14) + '</span>';
     d.onclick = () => addAssetNode(u, '资产');
     d.draggable = true;
-    d.addEventListener('dragstart', ev => { ev.dataTransfer.setData('asset', JSON.stringify({ url: u, label: '资产' })); closeDock(); });
+    d.addEventListener('dragstart', ev => ev.dataTransfer.setData('asset', JSON.stringify({ url: u, label: '资产' })));
+    d.addEventListener('dragend', () => closeDock());
     grid.appendChild(d);
   });
 }
@@ -1279,7 +1281,8 @@ function renderPresetGrid(list, box, labelPrefix) {
     d.title = pc.prompt;
     d.onclick = () => addAssetNode(null, labelPrefix + ' · ' + pc.name, pc.prompt);
     d.draggable = true;
-    d.addEventListener('dragstart', ev => { ev.dataTransfer.setData('asset', JSON.stringify({ label: labelPrefix + ' · ' + pc.name, prompt: pc.prompt, seed: pc.seed })); closeDock(); });
+    d.addEventListener('dragstart', ev => ev.dataTransfer.setData('asset', JSON.stringify({ label: labelPrefix + ' · ' + pc.name, prompt: pc.prompt, seed: pc.seed })));
+    d.addEventListener('dragend', () => closeDock());
     grid.appendChild(d);
   });
 }
@@ -1351,7 +1354,8 @@ function renderTemplates(list, box) {
       <div class="tpl-meta">${tpl.nodes.length} 节点 · ${tplMeta(tpl)} → 点击/拖入画布套用</div>`;
     d.addEventListener('click', () => applyTemplate(tpl));
     d.draggable = true;
-    d.addEventListener('dragstart', ev => { ev.dataTransfer.setData('template', tpl.id); closeDock(); });   // 拖入画布 = 开新画布
+    d.addEventListener('dragstart', ev => ev.dataTransfer.setData('template', tpl.id));   // 拖入画布 = 开新画布
+    d.addEventListener('dragend', () => closeDock());
     box.appendChild(d);
   });
 }
