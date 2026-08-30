@@ -80,9 +80,9 @@ npm run deploy:cf
 文本与图片生成已接入商汤 SenseNova（OpenAI 兼容网关 `https://token.sensenova.cn/v1`）：
 
 - 文本：`POST /v1/chat/completions`（`thinking: disabled` 直接输出正文）
-- 图片：`POST /v1/images/generations`，生成图自动下载到 `uploads/` 防外链过期
+- 图片：`POST /v1/images/generations`，生成图自动下载转存 R2（`/uploads/...` 读回）防外链过期
 - 文生图尺寸按面板比例自动映射（16:9 / 9:16 / 1:1 / 4:3 / 21:9）
-- key 与默认模型在 `data/config.json` 的 `provider.sensenova`；可用模型以网关 `GET /v1/models` 为准
+- key 与默认模型在 D1 `settings` 表（`id = "model-config"`，首次访问自动从 `.dev.vars` / 环境变量 `SENSENOVA_*` 播种）；可用模型以网关 `GET /v1/models` 为准
 - `visionModel`：视觉理解模型（input 含 image），用于"看"参考图生成画面描述；侧栏状态灯实时显示通道可用性（后台每 5 分钟探测，恢复即自动生效）
 - 视频/音频生成暂为模拟（该网关暂无相应模型）；未配置 key 时全部回退模拟
 
@@ -93,7 +93,7 @@ npm run deploy:cf
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/api/project` | 读取画布项目 |
-| GET | `/api/config` | 读取模型配置（`data/config.json`） |
+| GET | `/api/config` | 读取模型配置（D1 `settings`，缺省从环境变量播种） |
 | PUT | `/api/config` | 更新模型配置 |
 | PUT | `/api/project` | 保存画布 |
 | POST | `/api/upload` | 上传素材（raw body，`X-Filename` 头） |
