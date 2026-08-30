@@ -80,6 +80,7 @@ export default function Home() {
                     <button className="g-up" id="gPick" title="从素材库选择"><span className="ico">✦</span>选择</button>
                 </div>
                 <div className="g-inputwrap">
+                    <div className="g-nine-tag" id="gNineTag" style={{ display: "none" }}></div>
                     <textarea className="g-input" id="gInput" rows={3} placeholder=""></textarea>
                 </div>
                 <div className="g-foot">
@@ -117,32 +118,13 @@ export default function Home() {
 
             <div className="toast" id="toast"></div>
 
-            {/* 九宫格能力弹窗：选技能 → 看来源图 → 按场景定宫格数 → 发送 */}
-            <div className="nine-modal" id="nineModal" data-src="">
-                <div className="nm-head">
-                    <span className="nm-title">▦ 九宫格</span>
-                    <span className="nm-sep">|</span>
-                    <span className="nm-lead">选择类型：</span>
-                    <div id="nmTypes" style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}></div>
-                    <button className="nm-close" id="nmClose" title="关闭">✕</button>
-                </div>
-                <div className="nm-body">
-                    <div className="nm-src">
-                        <span id="nmSrcLabel"></span>
-                        <img id="nmSrcImg" alt="来源图" />
-                    </div>
-                    <div className="nm-promptwrap">
-                        <div className="nm-mode-tag" id="nmModeTag"></div>
-                        <textarea id="nmPrompt" rows={3} placeholder=""></textarea>
-                        <div className="nm-foot">
-                            <select id="nmRatio" className="g-sel2"></select>
-                            <select id="nmCells" className="g-sel2"></select>
-                            <span className="flex" style={{ flex: 1 }}></span>
-                            <span className="g-cost">消耗 ◆ <b id="nmCost">18</b></span>
-                            <button className="nm-send" id="nmSend" title="生成九宫格">↑</button>
-                        </div>
-                    </div>
-                </div>
+            {/* 九宫格类型选择条：点「▦ 九宫格」后顶部出现，选类型后底部对话区带技能前缀直接输入 */}
+            <div className="nine-bar" id="nineBar">
+                <span className="nb-title">▦ 九宫格</span>
+                <span className="nb-sep">|</span>
+                <span className="nb-lead">选择类型：</span>
+                <span id="nbTypes" style={{ display: "inline-flex", gap: "6px", flexWrap: "wrap" }}></span>
+                <button className="nb-close" id="nbClose" title="退出九宫格">✕</button>
             </div>
             <div className="legend" id="legend" title="点击折叠/展开">
                 <b>连线图例</b>

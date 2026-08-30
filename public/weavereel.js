@@ -757,7 +757,7 @@ const CAP_PROMPTS = {
 };
 function capApply(name) {
   const n = nodes.find(x => x.id === selected); if (!n) return;
-  if ((name === '九宫格' || name === '拆解分镜') && n.type === 'image') { openNineModal(n.id); return; }
+  if ((name === '九宫格' || name === '拆解分镜') && n.type === 'image') { (ninePick && ninePick.srcId === n.id) ? exitNinePick() : openNinePick(n.id); return; }
   if (name === '宫格裁剪') { gridCrop(n); return; }
   if (name === '标注') { annotate(n); return; }
   if (name === '合成视频' || name === '整组入片') { capCompose(); return; }
@@ -805,56 +805,50 @@ function addNineChild(src, opts = {}) {
   startGen(n, gridModeLabel(mode), { count: cells, ratio: opts.ratio });
 }
 
-/* ============ 九宫格能力弹窗：选技能 → 来源图 → 宫格数/比例 → 发送 ============ */
-let nineModalState = { mode: 'inspire', cells: 9 };
-function openNineModal(srcId) {
+/* ============ 九宫格模式：顶部类型选择条 + 底部对话区带技能前缀，无独立弹窗 ============
+   点「▦ 九宫格」→ 顶部条选类型 → 底部面板自动切到「技能前缀 + 宫格数 + 消耗」，
+   输入提示词点 ↑ 即生成；✕ / Esc / 点画布空白退出 */
+let ninePick = null;   // { srcId, mode, cells }
+const NINE_CELLS = [[9, '九宫格 · 完整叙事'], [6, '六宫格 · 紧凑叙事'], [4, '四宫格 · 关键节拍'], [2, '双图对比 · 前后对比']];
+function openNinePick(srcId) {
   const src = nodes.find(x => x.id === srcId); if (!src) return;
-  const m = $('nineModal');
-  m.dataset.src = srcId;
-  nineModalState = { mode: src.gridMode || 'inspire', cells: src.cells || 9 };
-  $('nmSrcImg').src = src.url || sceneURL(src.vseed || 0);
-  $('nmSrcLabel').textContent = '来源：' + ((src.prompt || '').slice(0, 18) || '图片');
-  $('nmPrompt').value = '';
-  $('nmRatio').innerHTML = ['16:9 · 1K', '9:16 · 1K', '1:1 · 1K', '4:3 · 1K'].map(r => `<option>${r}</option>`).join('');
-  if (!$('nmClose')._wired) {
-    $('nmClose').onclick = closeNineModal;
-    $('nmSend').onclick = sendNineModal;
-    $('nmClose')._wired = true;
-  }
-  renderNineModal();
-  m.classList.add('show');
-}
-function renderNineModal() {
-  const m = $('nineModal');
-  $('nmTypes').innerHTML = GRID_MODES.map(([id, label, ico]) =>
-    `<button class="gm-chip${id === nineModalState.mode ? ' active' : ''}" data-nm="${id}">${ico} ${label}</button>`).join('');
-  m.querySelectorAll('[data-nm]').forEach(b => b.onclick = e => {
+  ninePick = { srcId, mode: src.gridMode || 'inspire', cells: src.cells || 9 };
+  selected = srcId; render(); openPanel();
+  $('nbTypes').innerHTML = GRID_MODES.map(([id, label, ico]) =>
+    `<button class="gm-chip${id === ninePick.mode ? ' active' : ''}" data-nb="${id}">${ico} ${label}</button>`).join('');
+  $('nbTypes').querySelectorAll('[data-nb]').forEach(b => b.onclick = e => {
     e.stopPropagation();
-    nineModalState.mode = b.dataset.nm;
-    m.querySelectorAll('[data-nm]').forEach(x => x.classList.toggle('active', x.dataset.nm === nineModalState.mode));
-    $('nmModeTag').textContent = gridModeLabel(nineModalState.mode) + ' /';
+    ninePick.mode = b.dataset.nb;
+    $('nbTypes').querySelectorAll('[data-nb]').forEach(x => x.classList.toggle('active', x.dataset.nb === ninePick.mode));
+    applyNinePickPanel();
   });
-  $('nmModeTag').textContent = gridModeLabel(nineModalState.mode) + ' /';
-  $('nmPrompt').placeholder = '请输入九宫格生成提示词…';
-  $('nmCells').innerHTML = [[9, '九宫格'], [6, '六宫格'], [4, '四宫格'], [2, '双图对比']]
-    .map(([c, label]) => `<option value="${c}"${c === nineModalState.cells ? ' selected' : ''}>${label} · 满足${c === 9 ? '完整叙事' : c === 6 ? '紧凑叙事' : c === 4 ? '关键节拍' : '前后对比'}场景</option>`).join('');
-  $('nmCells').onchange = e => { nineModalState.cells = +e.target.value; $('nmCost').textContent = nineModalState.cells * 2; };
-  $('nmCost').textContent = nineModalState.cells * 2;
+  if (!$('nbClose')._wired) { $('nbClose').onclick = exitNinePick; $('nbClose')._wired = true; }
+  applyNinePickPanel();
+  $('nineBar').classList.add('show');
+  $('gInput').focus();
 }
-function closeNineModal() { $('nineModal').classList.remove('show'); }
-function sendNineModal() {
-  const src = nodes.find(x => x.id === $('nineModal').dataset.src); if (!src) return;
-  const prompt = $('nmPrompt').value.trim();
-  if (!prompt) { toast('请输入九宫格生成提示词'); return; }
-  addNineChild(src, { mode: nineModalState.mode, cells: nineModalState.cells, ratio: $('nmRatio').value, prompt });
-  closeNineModal();
+function applyNinePickPanel() {
+  $('gNineTag').style.display = 'block';
+  $('gNineTag').textContent = gridModeLabel(ninePick.mode) + ' /';
+  $('gInput').placeholder = '请输入九宫格生成提示词…';
+  $('gCount').innerHTML = NINE_CELLS.map(([c, label]) => `<option value="${c}"${c === ninePick.cells ? ' selected' : ''}>${label}</option>`).join('');
+  $('gCost').textContent = ninePick.cells * 2;
+  $('gRatio').style.display = '';
+  const gm = $('gGridModes'); if (gm) gm.style.display = 'none';   // 技能选择在顶部条
 }
-/* 点击弹窗外关闭（跳过已脱离文档的目标，避免重渲染时误判） */
-window.addEventListener('click', e => {
-  const m = $('nineModal');
-  if (m && m.classList.contains('show') && e.target instanceof Node && e.target.isConnected &&
-      !e.target.closest('#nineModal') && !e.target.closest('.aitb-btn')) closeNineModal();
-});
+function exitNinePick() {
+  ninePick = null;
+  $('nineBar').classList.remove('show');
+  if (selected) { render(); openPanel(); } else hideFloaters();
+}
+function sendNinePick() {
+  const src = nodes.find(x => x.id === ninePick.srcId);
+  if (!src) { exitNinePick(); return; }
+  const txt = $('gInput').value.trim();
+  if (!txt) { toast('请输入九宫格生成提示词'); return; }
+  addNineChild(src, { mode: ninePick.mode, cells: ninePick.cells, ratio: $('gRatio').value, prompt: txt });
+  exitNinePick();
+}
 
 /* ============ 图片工具：宫格裁剪（canvas 真实切片）与标注（canvas 底部字幕条） ============ */
 async function uploadCanvasBlob(cv, name) {
@@ -1049,6 +1043,9 @@ function renderRefChips(n) {
 function setTab(tab) {
   curTab = tab;
   const cfg = GEN_TABS[tab];
+  /* 技能前缀标签只在九宫格模式下显示 */
+  const ntag = $('gNineTag');
+  if (ntag) ntag.style.display = ninePick ? 'block' : 'none';
   const n = nodes.find(x => x.id === selected);
   const allowed = n ? TYPE_TAB[n.type] : null;   // 选中节点 → 只显示该类型自己的生成 Tab
   document.querySelectorAll('#gTabs button[data-tab]').forEach(b => {
@@ -1092,6 +1089,9 @@ document.querySelectorAll('#gTabs button[data-tab]').forEach(b => b.addEventList
   positionFloaters();
 }));
 $('gExpand').addEventListener('click', () => { genPanel.classList.toggle('big'); positionFloaters(); });
+$('gCount').addEventListener('change', () => {
+  if (ninePick) { ninePick.cells = parseInt($('gCount').value, 10) || 9; $('gCost').textContent = ninePick.cells * 2; }
+});
 $('gInput').addEventListener('input', () => {
   const n = nodes.find(x => x.id === selected);
   if (n) {
@@ -1117,6 +1117,7 @@ function findSpot(srcX, srcY, w, h) {
   return { x: Math.round(x), y: Math.round(y) };
 }
 $('gSend').addEventListener('click', () => {
+  if (ninePick) { sendNinePick(); return; }
   const txt = $('gInput').value.trim();
   if (!txt) { toast('请输入生成内容'); return; }
   const cfg = GEN_TABS[curTab];
@@ -1258,6 +1259,9 @@ window.addEventListener('click', e => {
   $('ctxMenu').style.display = 'none';
   if (!e.target.closest('#aitbMore')) $('moreMenu').style.display = 'none';
   if (!e.target.closest('#quickMenu') && !e.target.closest('#gPick')) $('quickMenu').style.display = 'none';
+  /* 九宫格模式：点击顶部条/面板/工具条以外区域退出 */
+  if (ninePick && e.target instanceof Node && e.target.isConnected &&
+      !e.target.closest('#nineBar') && !e.target.closest('#genPanel') && !e.target.closest('.aitb')) exitNinePick();
 });
 $('aitbMore').addEventListener('click', e => {
   e.stopPropagation();
@@ -1294,7 +1298,10 @@ vp.addEventListener('dblclick', e => {
   else $('gInput').focus();
 });
 window.addEventListener('keydown', e => {
-  if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  if (e.key === 'Escape' && ninePick) { exitNinePick(); return; }
+  if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') {
+    return;
+  }
   const mod = e.ctrlKey || e.metaKey;
   if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
   if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
