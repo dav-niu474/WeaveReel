@@ -1940,16 +1940,69 @@ async function saveSettings() {
   settingsCache = payload;
 }
 function closeSettings() { $('settingsModal').classList.remove('show'); }
+/* 模型分类启发式：按 id 关键词归入图片/视觉，其余归文本 */
+const IMG_MODEL_RE = /(image|dall-e|dalle|cogview|seedream|kolors|wanx|flux|stable|sd3|sdxl|u1|t2i|irag|janus)/i;
+const VIS_MODEL_RE = /(vl|vision|4o|4v|vlm|-v-|gemini)/i;
+function classifyModels(ids) {
+  const text = [], image = [], vision = [];
+  for (const id of ids) {
+    if (IMG_MODEL_RE.test(id)) image.push(id);
+    else if (VIS_MODEL_RE.test(id)) vision.push(id);
+    else text.push(id);
+  }
+  return { text: text.slice(0, 40), image: image.slice(0, 40), vision: vision.slice(0, 40) };
+}
+/* 填写 Key 后自动拉取该网关可用模型，填充模型选择列表（服务端代理避免跨域） */
+let fetchingModels = false;
+async function autoFetchModels() {
+  const baseUrl = $('smBase').value.trim(), apiKey = $('smKey').value.trim();
+  if (fetchingModels || !baseUrl || !apiKey) return;
+  fetchingModels = true;
+  const tip = $('smTip');
+  tip.textContent = '⏳ 正在拉取该网关的可用模型…'; tip.style.color = 'var(--text-dim)';
+  try {
+    const r = await fetch('/api/models', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ baseUrl, apiKey }) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'HTTP ' + r.status);
+    const ids = d.models || [];
+    if (!ids.length) throw new Error('网关未返回任何模型');
+    const cat = classifyModels(ids);
+    const cur = settingsCache || {};
+    settingsCache = { ...cur, models: { ...cur.models, text: cat.text.length ? cat.text : cur.models?.text, image: cat.image.length ? cat.image : cur.models?.image } };
+    // 各栏为空时填入该分类第一个；列表在保存后同步到生成面板下拉
+    if (!$('smText').value && cat.text.length) $('smText').value = cat.text[0];
+    if (!$('smImage').value && cat.image.length) $('smImage').value = cat.image[0];
+    if (!$('smVision').value && cat.vision.length) $('smVision').value = cat.vision[0];
+    tip.textContent = `✓ 拉取到 ${ids.length} 个模型（文本 ${cat.text.length} · 图片 ${cat.image.length} · 视觉 ${cat.vision.length}），点「保存配置」后同步到生成面板`;
+    tip.style.color = 'var(--green)';
+  } catch (e) {
+    tip.textContent = '✗ 模型拉取失败：' + e.message + '（可手动填写模型名）';
+    tip.style.color = '#f5c26b';
+  }
+  fetchingModels = false;
+}
 function initSettings() {
   const gear = document.querySelector('[title^="设置"]');
   if (gear) gear.addEventListener('click', openSettings);
   $('smClose').onclick = closeSettings;
   $('smSave').onclick = async () => {
     const b = $('smSave'); b.textContent = '保存中…';
-    try { await saveSettings(); $('smTip').textContent = '✓ 配置已保存'; $('smTip').style.color = 'var(--green)'; toast('⚙ 模型配置已保存'); await refreshVisionStatus(); }
+    try {
+      await saveSettings();
+      $('smTip').textContent = '✓ 配置已保存'; $('smTip').style.color = 'var(--green)'; toast('⚙ 模型配置已保存'); await refreshVisionStatus();
+      /* 模型清单同步到生成面板下拉（视频/音频保持不变） */
+      const m = settingsCache && settingsCache.models;
+      if (m) {
+        for (const k of Object.keys(GEN_TABS)) {
+          if (Array.isArray(m[k]) && m[k].length) GEN_TABS[k].models = m[k];
+        }
+        if (selected) setTab(curTab);
+      }
+    }
     catch (e) { $('smTip').textContent = '✗ 保存失败：' + e.message; $('smTip').style.color = '#f5c26b'; }
     b.textContent = '保存配置';
   };
+  ['smKey', 'smBase'].forEach(id => $(id).addEventListener('change', autoFetchModels));
   $('smTest').onclick = async () => {
     const tip = $('smTip');
     tip.textContent = '⏳ 正在检测（先保存配置，再探测视觉通道）…'; tip.style.color = 'var(--text-dim)';
