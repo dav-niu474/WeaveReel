@@ -1395,6 +1395,8 @@ vp.addEventListener('dblclick', e => {
   else $('gInput').focus();
 });
 window.addEventListener('keydown', e => {
+  const mod0 = e.ctrlKey || e.metaKey;
+  if (mod0 && e.key.toLowerCase() === 's') { e.preventDefault(); saveCanvas(); return; }
   if (e.key === 'Escape' && ninePick) { exitNinePick(); return; }
   if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') {
     return;
@@ -1471,13 +1473,32 @@ function restoreSnapshot(s) {
 }
 function undo() { if (!undoStack.length) { toast('没有可撤销的操作'); return; } redoStack.push(serialize()); restoreSnapshot(undoStack.pop()); toast('↩ 已撤销'); }
 function redo() { if (!redoStack.length) { toast('没有可重做的操作'); return; } undoStack.push(serialize()); restoreSnapshot(redoStack.pop()); toast('↪ 已重做'); }
+function saveNow() {
+  clearTimeout(saveTimer);
+  const payload = { nodes, edges, groups, view: { scale, panX, panY } };
+  try { localStorage.setItem(LS_KEY, JSON.stringify(payload)); } catch (_) {}
+  return api.putProject(payload);
+}
 function save() {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    const payload = { nodes, edges, groups, view: { scale, panX, panY } };
-    try { localStorage.setItem(LS_KEY, JSON.stringify(payload)); } catch (_) {}
-    api.putProject(payload).catch(() => { /* 服务端不可达时静默，本地已有兜底 */ });
-  }, 300);
+  saveTimer = setTimeout(() => { saveNow().catch(() => { /* 服务端不可达时静默，本地已有兜底 */ }); }, 300);
+}
+/* 手动保存：顶栏「💾 保存」/ Ctrl+S，立即落库并给出反馈 */
+async function saveCanvas() {
+  const btn = $('saveBtn');
+  const orig = '💾 保存';
+  if (btn) btn.textContent = '⏳ 保存中…';
+  try {
+    await saveNow();
+    toast('💾 画布已保存 · ' + new Date().toLocaleTimeString('zh-CN', { hour12: false }));
+    if (btn) {
+      btn.textContent = '✓ 已保存';
+      setTimeout(() => { btn.textContent = orig; }, 1800);
+    }
+  } catch (_) {
+    toast('❌ 保存失败：服务端不可达（内容已暂存本地，恢复网络后再次保存）');
+    if (btn) setTimeout(() => { btn.textContent = orig; }, 1800);
+  }
 }
 async function loadProject() {
   try {

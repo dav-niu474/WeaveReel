@@ -25,6 +25,7 @@ export default function Home() {
                     <button className="icon-btn" title="重做 (Ctrl+Y)" onClick={call("redo")}>↪</button>
                     <button className="icon-btn" title="新建画布" onClick={call("newCanvas")}>✚</button>
                     <button className="icon-btn" title="自动布局" onClick={call("autoLayout")}>⌗</button>
+                    <button className="btn-save" id="saveBtn" title="保存画布 (Ctrl+S)" onClick={call("saveCanvas")}>💾 保存</button>
                     <button className="btn-primary" onClick={call("composeAll")}>⚡ 一键成片</button>
                     <div className="avatar">A</div>
                 </div>

@@ -27,6 +27,9 @@
   .topbar-right{display:flex;align-items:center;gap:12px}
   .icon-btn{width:34px;height:34px;border-radius:9px;border:1px solid var(--border);background:var(--panel);color:var(--text-dim);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.15s;font-size:14px}
   .icon-btn:hover{color:var(--text);border-color:var(--accent)}
+  .btn-save{padding:7px 14px;border-radius:999px;border:1px solid var(--border);background:var(--panel-2);color:var(--text);
+    font-size:12.5px;cursor:pointer;transition:.15s;white-space:nowrap}
+  .btn-save:hover{border-color:#4f8cff66;color:#fff}
   .btn-primary{background:linear-gradient(135deg,var(--accent),#5a4bd6);color:#fff;border:none;padding:8px 18px;border-radius:9px;font-size:13px;cursor:pointer;transition:.2s}
   .btn-primary:hover{filter:brightness(1.15)}
   .avatar{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#f093fb,#f5576c);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600}
