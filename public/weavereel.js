@@ -828,7 +828,12 @@ function renderNineModal() {
   const m = $('nineModal');
   $('nmTypes').innerHTML = GRID_MODES.map(([id, label, ico]) =>
     `<button class="gm-chip${id === nineModalState.mode ? ' active' : ''}" data-nm="${id}">${ico} ${label}</button>`).join('');
-  m.querySelectorAll('[data-nm]').forEach(b => b.onclick = () => { nineModalState.mode = b.dataset.nm; renderNineModal(); });
+  m.querySelectorAll('[data-nm]').forEach(b => b.onclick = e => {
+    e.stopPropagation();
+    nineModalState.mode = b.dataset.nm;
+    m.querySelectorAll('[data-nm]').forEach(x => x.classList.toggle('active', x.dataset.nm === nineModalState.mode));
+    $('nmModeTag').textContent = gridModeLabel(nineModalState.mode) + ' /';
+  });
   $('nmModeTag').textContent = gridModeLabel(nineModalState.mode) + ' /';
   $('nmPrompt').placeholder = '请输入九宫格生成提示词…';
   $('nmCells').innerHTML = [[9, '九宫格'], [6, '六宫格'], [4, '四宫格'], [2, '双图对比']]
@@ -844,10 +849,11 @@ function sendNineModal() {
   addNineChild(src, { mode: nineModalState.mode, cells: nineModalState.cells, ratio: $('nmRatio').value, prompt });
   closeNineModal();
 }
-/* 点击弹窗外关闭 */
+/* 点击弹窗外关闭（跳过已脱离文档的目标，避免重渲染时误判） */
 window.addEventListener('click', e => {
   const m = $('nineModal');
-  if (m && m.classList.contains('show') && !e.target.closest('#nineModal') && !e.target.closest('.aitb-btn')) closeNineModal();
+  if (m && m.classList.contains('show') && e.target instanceof Node && e.target.isConnected &&
+      !e.target.closest('#nineModal') && !e.target.closest('.aitb-btn')) closeNineModal();
 });
 
 /* ============ 图片工具：宫格裁剪（canvas 真实切片）与标注（canvas 底部字幕条） ============ */
