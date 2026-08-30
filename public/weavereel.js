@@ -1872,7 +1872,26 @@ async function openSettings() {
   $('smImage').value = p.imageModel || '';
   $('smVision').value = p.visionModel || '';
   $('smTip').textContent = '';
+  renderProviderPresets();
   $('settingsModal').classList.add('show');
+}
+/* 常用供应商预置：点击填入网关地址与默认模型，用户只需补 API Key */
+function renderProviderPresets() {
+  const presets = (settingsCache && settingsCache.presets) || [];
+  const box = $('smPresets');
+  if (!box) return;
+  box.innerHTML = presets.map((pc, i) => `<button class="sm-preset" data-pi="${i}" title="${esc(pc.note || pc.baseUrl)}">${esc(pc.name)}</button>`).join('');
+  box.querySelectorAll('[data-pi]').forEach(b => b.onclick = () => {
+    const pc = presets[+b.dataset.pi];
+    if (!pc) return;
+    $('smBase').value = pc.baseUrl;
+    $('smText').value = pc.textModel || '';
+    $('smImage').value = pc.imageModel || '';
+    $('smVision').value = pc.visionModel || pc.textModel || '';
+    $('smKey').value = '';
+    $('smTip').textContent = '已填入「' + pc.name + '」预设' + (pc.note ? '（' + pc.note + '）' : '') + '，输入该平台的 API Key 后保存';
+    $('smTip').style.color = 'var(--text-dim)';
+  });
 }
 function collectSettings() {
   const base = (settingsCache && settingsCache) || {};

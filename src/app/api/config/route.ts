@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { getDb, settings } from "@/db";
+import { PROVIDER_PRESETS } from "@/lib/providers";
 
 export const dynamic = "force-dynamic";
 
@@ -44,7 +45,7 @@ async function ensureConfig(): Promise<{ data: unknown; env: Record<string, stri
 
 export async function GET() {
     const { data } = await ensureConfig();
-    return NextResponse.json(data);
+    return NextResponse.json({ ...data, presets: PROVIDER_PRESETS });
 }
 
 export async function PUT(req: Request) {

@@ -99,6 +99,11 @@
   .sm-head button{border:none;background:transparent;color:var(--text-dim);cursor:pointer;font-size:14px;padding:2px 6px;border-radius:6px}
   .sm-head button:hover{color:#fff;background:var(--card-hover)}
   .sm-body{padding:14px 16px;display:flex;flex-direction:column;gap:10px}
+  .sm-sec{font-size:11px;color:var(--text-dim);display:block;margin-bottom:6px}
+  .sm-presets{display:flex;flex-wrap:wrap;gap:6px}
+  .sm-preset{border:1px solid var(--border);background:var(--panel-2);color:var(--text-dim);border-radius:14px;
+    padding:4px 11px;font-size:12px;cursor:pointer;transition:.15s}
+  .sm-preset:hover{color:#fff;border-color:#4f8cff66;background:var(--card-hover)}
   .sm-body label{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--text-dim)}
   .sm-body input{background:var(--panel-2);border:1px solid var(--border);border-radius:9px;color:var(--text);font-size:13px;padding:8px 11px;font-family:inherit}
   .sm-body input:focus{outline:none;border-color:#4f8cff66}

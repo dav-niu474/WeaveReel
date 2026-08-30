@@ -128,6 +128,7 @@ export default function Home() {
             <div className="settings-modal" id="settingsModal">
                 <div className="sm-head"><b>⚙ 设置 · 模型供应商</b><button id="smClose" title="关闭">✕</button></div>
                 <div className="sm-body">
+                    <div className="sm-presets-wrap"><span className="sm-sec">常用供应商 · 点击填入，再补 API Key</span><div className="sm-presets" id="smPresets"></div></div>
                     <label>网关地址<input id="smBase" placeholder="https://token.sensenova.cn/v1" /></label>
                     <label>API Key<input id="smKey" type="password" placeholder="sk-…" /></label>
                     <div className="sm-row">
