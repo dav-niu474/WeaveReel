@@ -607,7 +607,7 @@ function hideFloaters() { aiToolbar.classList.remove('show'); genPanel.classList
 
 /* ============ AI 能力：每种节点类型有自己的处理方法（对齐参考产品） ============ */
 const CAPS = {
-  image: [['全景', '🕶'], ['多角度', '🔄'], ['九宫格', '▦'], ['画面切分', '🖥'], ['打光', '💡'], ['故事推演', '📖'], ['对口型', '👄'], ['消除笔', '🧽'], ['图片超清', '✨']],
+  image: [['人物调节', '🧑'], ['全景', '🕶'], ['画质', '🧬'], ['编辑元素', '🧩'], ['九宫格', '▦'], ['画面切分', '🖥'], ['宫格裁剪', '✂️'], ['多角度', '🔄'], ['打光', '💡'], ['标注', '🏷'], ['故事推演', '📖'], ['对口型', '👄'], ['消除笔', '🧽']],
   video: [['截取帧', '🎞'], ['视频增强', '📺'], ['去字幕', '🅰'], ['音频分离', '🎙']],
   nine : [['切换技能', '🎛'], ['提升全部', '⬆'], ['画面切分', '🖥'], ['图片超清', '✨'], ['风格迁移', '🎨']],
   text : [['润色', '✒️'], ['扩写', '📖'], ['分镜拆解', '🎬'], ['提取角色', '🧑‍🎤'], ['翻译', '🌐']],
@@ -736,7 +736,9 @@ const CAP_PROMPTS = {
   '去字幕': '去除画面中的字幕与文字水印，画面干净完整',
   '打光': '电影感打光，暖调主光加轮廓光',
   '消除笔': '画面干净无杂物',
-  '图片超清': '超高清画质，细节锐利，8K 质感',
+  '画质': '超高清画质，细节锐利，8K 质感',
+  '人物调节': '调整画面中人物的姿态与表情：保持身份、服装与画风一致，动作自然',
+  '编辑元素': '画面元素分层编辑：主体突出，背景与前景独立调整，层次分明',
   '视频超清': '超高清画质，细节锐利',
   '风格迁移': '统一艺术风格化处理',
   '局部重绘': '局部细节重绘，其余部分保持一致',
@@ -762,7 +764,9 @@ const CAP_PROMPTS = {
 };
 function capApply(name) {
   const n = nodes.find(x => x.id === selected); if (!n) return;
-  if ((name === '九宫格' || name === '拆解分镜') && n.type === 'image') { addNineChild(n); return; }
+  if ((name === '九宫格' || name === '拆解分镜') && n.type === 'image') { openNineModal(n.id); return; }
+  if (name === '宫格裁剪') { gridCrop(n); return; }
+  if (name === '标注') { annotate(n); return; }
   if (name === '合成视频' || name === '整组入片') { capCompose(); return; }
   if (name === '进编辑器') { switchMode('editor'); return; }
   if (name === '导出成片') { exportFilm(); return; }
@@ -771,7 +775,7 @@ function capApply(name) {
   if (name === '截取帧') { extractFrame(n); return; }
   if (name === '音频分离') { splitAudio(n); return; }
   if (n.status === 'running') { toast('⏳ 当前节点正在生成中…'); return; }
-  const variety = ['全景', '打光', '消除笔', '图片超清', '风格迁移', '局部重绘', '扩图', '背景替换', '风格化', '去水印', '视频增强', '去字幕', '多角度'].includes(name);
+  const variety = ['全景', '打光', '消除笔', '画质', '风格迁移', '局部重绘', '扩图', '背景替换', '风格化', '去水印', '视频增强', '去字幕', '多角度', '人物调节', '编辑元素'].includes(name);
   startGen(n, name, { newSeed: variety, instr: CAP_PROMPTS[name] });
 }
 /* 视频截取帧：从视频节点取当前画面生成图片子节点 */
@@ -793,14 +797,114 @@ function splitAudio(v) {
   toast('🎙 已分离音频节点（当前为占位波形）');
 }
 function moreApply(name) { $('moreMenu').style.display = 'none'; capApply(name); }
-function addNineChild(src) {
+function addNineChild(src, opts = {}) {
   if (nodes.some(x => x.type === 'nine' && edges.some(e => e.from === src.id && e.to === x.id))) { toast('▦ 该图片已有九宫格节点'); return; }
   pushUndo();
-  /* 用当前选中的九宫格技能创建子节点：跳舞镜头等动作类内容选「舞蹈动作/武打分镜」即调用对应分镜技能 */
-  const n = { id: uid(), type: 'nine', x: src.x + 460, y: src.y - 20, status: 'idle', prompt: '基于当前图片生成九宫格分镜…', vseed: Math.floor(Math.random() * 97), gridMode, label: '九宫格 · ' + gridModeLabel(gridMode) };
+  const mode = opts.mode || gridMode;
+  const cells = opts.cells || 9;
+  const cols = cells >= 6 ? 3 : 2;
+  /* 用弹窗里选定的技能与宫格数创建子节点：不同场景输出不同规格的九宫格 */
+  const n = { id: uid(), type: 'nine', x: src.x + 460, y: src.y - 20, status: 'idle',
+    prompt: opts.prompt || '基于当前图片生成九宫格分镜…', vseed: Math.floor(Math.random() * 97),
+    gridMode: mode, cells, cols, label: (cells === 9 ? '九宫格' : cells + '宫格') + ' · ' + gridModeLabel(mode) };
   nodes.push(n); addEdge(src.id, n.id, { silent: true });
-  selected = n.id; render(); openPanel(); save(); toast('▦ 已创建九宫格节点（技能：' + gridModeLabel(gridMode) + '），开始生成');
-  startGen(n, gridModeLabel(gridMode));
+  selected = n.id; render(); save(); toast('▦ 已创建' + n.label + '节点，开始生成');
+  startGen(n, gridModeLabel(mode), { count: cells, ratio: opts.ratio });
+}
+
+/* ============ 九宫格能力弹窗：选技能 → 来源图 → 宫格数/比例 → 发送 ============ */
+let nineModalState = { mode: 'inspire', cells: 9 };
+function openNineModal(srcId) {
+  const src = nodes.find(x => x.id === srcId); if (!src) return;
+  const m = $('nineModal');
+  m.dataset.src = srcId;
+  nineModalState = { mode: src.gridMode || 'inspire', cells: src.cells || 9 };
+  $('nmSrcImg').src = src.url || sceneURL(src.vseed || 0);
+  $('nmSrcLabel').textContent = '来源：' + ((src.prompt || '').slice(0, 18) || '图片');
+  $('nmPrompt').value = '';
+  $('nmRatio').innerHTML = ['16:9 · 1K', '9:16 · 1K', '1:1 · 1K', '4:3 · 1K'].map(r => `<option>${r}</option>`).join('');
+  if (!$('nmClose')._wired) {
+    $('nmClose').onclick = closeNineModal;
+    $('nmSend').onclick = sendNineModal;
+    $('nmClose')._wired = true;
+  }
+  renderNineModal();
+  m.classList.add('show');
+}
+function renderNineModal() {
+  const m = $('nineModal');
+  $('nmTypes').innerHTML = GRID_MODES.map(([id, label, ico]) =>
+    `<button class="gm-chip${id === nineModalState.mode ? ' active' : ''}" data-nm="${id}">${ico} ${label}</button>`).join('');
+  m.querySelectorAll('[data-nm]').forEach(b => b.onclick = () => { nineModalState.mode = b.dataset.nm; renderNineModal(); });
+  $('nmModeTag').textContent = gridModeLabel(nineModalState.mode) + ' /';
+  $('nmPrompt').placeholder = '请输入九宫格生成提示词…';
+  $('nmCells').innerHTML = [[9, '九宫格'], [6, '六宫格'], [4, '四宫格'], [2, '双图对比']]
+    .map(([c, label]) => `<option value="${c}"${c === nineModalState.cells ? ' selected' : ''}>${label} · 满足${c === 9 ? '完整叙事' : c === 6 ? '紧凑叙事' : c === 4 ? '关键节拍' : '前后对比'}场景</option>`).join('');
+  $('nmCells').onchange = e => { nineModalState.cells = +e.target.value; $('nmCost').textContent = nineModalState.cells * 2; };
+  $('nmCost').textContent = nineModalState.cells * 2;
+}
+function closeNineModal() { $('nineModal').classList.remove('show'); }
+function sendNineModal() {
+  const src = nodes.find(x => x.id === $('nineModal').dataset.src); if (!src) return;
+  const prompt = $('nmPrompt').value.trim();
+  if (!prompt) { toast('请输入九宫格生成提示词'); return; }
+  addNineChild(src, { mode: nineModalState.mode, cells: nineModalState.cells, ratio: $('nmRatio').value, prompt });
+  closeNineModal();
+}
+/* 点击弹窗外关闭 */
+window.addEventListener('click', e => {
+  const m = $('nineModal');
+  if (m && m.classList.contains('show') && !e.target.closest('#nineModal') && !e.target.closest('.aitb-btn')) closeNineModal();
+});
+
+/* ============ 图片工具：宫格裁剪（canvas 真实切片）与标注（canvas 底部字幕条） ============ */
+async function uploadCanvasBlob(cv, name) {
+  const blob = await new Promise(res => cv.toBlob(res, 'image/jpeg', 0.92));
+  return api.upload(new File([blob], name, { type: 'image/jpeg' }));
+}
+function gridCrop(n) {
+  if (!n || n.type !== 'image' || !n.url) { toast('请先选择有画面的图片节点'); return; }
+  toast('✂️ 正在裁剪宫格…');
+  const im = new Image();
+  im.onload = async () => {
+    pushUndo();
+    const N = 3, cw = Math.floor(im.width / N), ch = Math.floor(im.height / N);
+    let made = 0;
+    for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) {
+      const cv = document.createElement('canvas'); cv.width = cw; cv.height = ch;
+      cv.getContext('2d').drawImage(im, c * cw, r * ch, cw, ch, 0, 0, cw, ch);
+      const up = await uploadCanvasBlob(cv, 'crop.jpg');
+      const child = { id: uid(), type: 'image', x: n.x + 460 + c * 100, y: n.y - 120 + r * 110,
+        status: 'done', progress: 100, prompt: '宫格裁剪 ' + (r * N + c + 1) + '/9：' + (n.prompt || ''), url: up.url, vseed: ((n.vseed || 0) + r * 3 + c) % 97 };
+      nodes.push(child); addEdge(n.id, child.id, { silent: true }); made++;
+    }
+    render(); save(); toast('✂️ 已裁剪为 ' + made + ' 张子图（已转存素材库）');
+  };
+  im.onerror = () => toast('图片加载失败，无法裁剪');
+  im.src = n.url;
+}
+function annotate(n) {
+  if (!n || n.type !== 'image' || !n.url) { toast('请先选择有画面的图片节点'); return; }
+  const text = prompt('输入要标注在图片下方的内容：');
+  if (!text) return;
+  const im = new Image();
+  im.onload = async () => {
+    const barH = Math.max(40, Math.round(im.width / 14));
+    const cv = document.createElement('canvas'); cv.width = im.width; cv.height = im.height + barH;
+    const g = cv.getContext('2d');
+    g.drawImage(im, 0, 0);
+    g.fillStyle = 'rgba(10,14,24,.92)'; g.fillRect(0, im.height, cv.width, barH);
+    g.fillStyle = '#fff'; g.font = Math.round(barH * 0.48) + 'px sans-serif';
+    g.fillText(text.slice(0, 60), 14, im.height + barH * 0.68);
+    const up = await uploadCanvasBlob(cv, 'annotated.jpg');
+    pushUndo();
+    const child = { id: uid(), type: 'image', x: n.x + 460, y: n.y + 60, status: 'done', progress: 100,
+      prompt: '标注：' + text, url: up.url, vseed: n.vseed };
+    nodes.push(child); addEdge(n.id, child.id, { silent: true });
+    selected = child.id; render(); openPanel(); save(); toast('🏷 已生成标注版图片');
+  };
+  im.onerror = () => toast('图片加载失败，无法标注');
+  im.src = n.url;
 }
 function capCompose() {
   const n = nodes.find(x => x.id === selected);
@@ -965,11 +1069,10 @@ function setTab(tab) {
   /* 九宫格技能选择条：仅图片生成 Tab 展示；选中九宫格节点时高亮其技能 */
   const gm = $('gGridModes');
   if (gm) {
-    gm.style.display = tab === 'image' ? 'flex' : 'none';
-    if (tab === 'image') {
-      if (n && n.type === 'nine' && n.gridMode) gridMode = n.gridMode;
-      renderGridModes(gridMode);
-    }
+    /* 技能属于九宫格功能：面板技能条只在九宫格节点上显示（图片节点经「▦ 九宫格」弹窗选技能） */
+    gm.style.display = (tab === 'image' && n && n.type === 'nine') ? 'flex' : 'none';
+    if (gm.style.display === 'flex' && n.gridMode) gridMode = n.gridMode;
+    if (gm.style.display === 'flex') renderGridModes(gridMode);
   }
 }
 function tabForNodeType(t) {
