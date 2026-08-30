@@ -1166,7 +1166,7 @@ $('gSend').addEventListener('click', () => {
 /* ============ 右侧 Dock：新增 / 资产库 / 主体库 / 素材库 ============ */
 let assetsCache = null;   // { subjects, scenes } 预置资产
 let activeDock = null;    // 'add' | 'assets' | 'subjects' | 'stock'
-const DOCK_TITLES = { add: '新增节点', assets: '资产库 · 项目产出', subjects: '主体库 · IP 形象', stock: '素材库 · 场景素材与模板' };
+const DOCK_TITLES = { add: '新增节点', assets: '资产库', subjects: '主体库', stock: '素材库' };
 function toggleDock(section) {
   activeDock = activeDock === section ? null : section;
   document.querySelectorAll('.dock-btn').forEach(x => x.classList.remove('active'));
