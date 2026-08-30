@@ -1,0 +1,9 @@
+# 本地开发密钥（wrangler dev / next dev 的 getPlatformProxy 注入）— 勿提交
+NEXTJS_ENV=development
+
+# SenseNova（商汤日日新）网关
+SENSENOVA_BASE_URL=https://token.sensenova.cn/v1
+SENSENOVA_API_KEY=sk-你的密钥
+SENSENOVA_TEXT_MODEL=sensenova-6.8-flash-lite
+SENSENOVA_IMAGE_MODEL=sensenova-u1-fast
+SENSENOVA_VISION_MODEL=sensenova-6.8-flash-lite

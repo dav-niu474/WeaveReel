@@ -1,0 +1,36 @@
+/**
+ * 织影 WeaveReel — Cloudflare Workers 配置（OpenNext 适配）
+ */
+{
+    "$schema": "node_modules/wrangler/config-schema.json",
+    "name": "weavereel",
+    "main": ".open-next/worker.js",
+    "compatibility_date": "2025-03-01",
+    "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+    "assets": {
+        "binding": "ASSETS",
+        "directory": ".open-next/assets"
+    },
+    "observability": {
+        "enabled": true
+    },
+    "d1_databases": [
+        {
+            "binding": "weavereel_db",
+            "database_name": "weavereel-db",
+            "database_id": "local",
+            "migrations_dir": "./src/drizzle"
+        }
+    ],
+    "r2_buckets": [
+        {
+            "bucket_name": "weavereel-uploads",
+            "binding": "weavereel_uploads",
+            "preview_bucket_name": "weavereel-uploads-dev"
+        }
+    ]
+    /**
+     * 密钥不放配置文件：`npx wrangler secret put SENSENOVA_API_KEY`
+     * 本地开发写入 .dev.vars（已 gitignore）
+     */
+}

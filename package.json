@@ -1,13 +1,36 @@
 {
-  "name": "weavereel",
-  "version": "1.0.0",
-  "description": "织影 WeaveReel — 节点式 AI 视频创作工作台（零依赖 Node 后端 + 原生前端）",
-  "main": "server.js",
-  "scripts": {
-    "start": "node server.js"
-  },
-  "engines": {
-    "node": ">=18"
-  },
-  "license": "MIT"
+    "name": "weavereel",
+    "version": "2.0.0",
+    "private": true,
+    "description": "织影 WeaveReel — 节点式 AI 视频创作工作台（Next.js + Cloudflare Workers + D1 + R2）",
+    "scripts": {
+        "dev": "next dev",
+        "build": "next build",
+        "start": "next start",
+        "wrangler:dev": "npx wrangler dev",
+        "dev:cf": "npx @opennextjs/cloudflare build && wrangler dev",
+        "build:cf": "npx @opennextjs/cloudflare build",
+        "deploy:cf": "npx @opennextjs/cloudflare deploy",
+        "preview:cf": "npx @opennextjs/cloudflare preview",
+        "db:generate": "drizzle-kit generate",
+        "db:migrate:local": "wrangler d1 migrations apply weavereel_db --local",
+        "db:migrate:prod": "wrangler d1 migrations apply weavereel_db --remote",
+        "db:studio:local": "drizzle-kit studio --config=drizzle.local.config.ts",
+        "cf:typegen": "npx wrangler types"
+    },
+    "dependencies": {
+        "@opennextjs/cloudflare": "^1.3.0",
+        "drizzle-orm": "^0.44.5",
+        "next": "^16.3.3",
+        "react": "19.1.0",
+        "react-dom": "19.1.0"
+    },
+    "devDependencies": {
+        "@types/node": "^20.19.13",
+        "@types/react": "^19",
+        "@types/react-dom": "^19",
+        "drizzle-kit": "^0.31.4",
+        "typescript": "^5",
+        "wrangler": "^4.35.0"
+    }
 }

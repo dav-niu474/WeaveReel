@@ -1,6 +1,8 @@
-# 织影 WeaveReel · AI 视频创作工作台（画布模式）
+# 织影 WeaveReel · AI 视频创作工作台
 
-节点式 AI 视频创作工作台：在画布上用节点与连线组织创作——内容沿连线流动，逐级生成，链式成片。全栈实现、零 npm 依赖。
+节点式 AI 视频创作工作台：在画布上用节点与连线组织创作——内容沿连线流动，逐级生成，链式成片。
+
+技术栈：**Next.js 16（App Router）+ React 19 + TypeScript**，经 **@opennextjs/cloudflare** 部署到 Cloudflare Workers；画布持久化 / 模型配置 / 任务队列存 **D1**（Drizzle ORM），素材与生成图存 **R2**。
 
 ## 截图
 
@@ -19,27 +21,49 @@
 ## 快速开始
 
 ```bash
-node server.js
-# 打开 http://localhost:3000
+npm install
+npx wrangler d1 migrations apply weavereel_db --local   # 初始化本地 D1
+cp .dev.vars.example .dev.vars                           # 填入 SenseNova API key
+npm run dev                                              # http://localhost:3000（miniflare 本地提供 D1/R2）
 ```
 
-- 需要 Node.js >= 18（无任何第三方依赖）
-- `data/project.json`：画布自动保存
-- `data/config.json`：**生成模型配置**（含 API key，不进版本库；首次启动自动生成默认值，模板见 `data/config.example.json`）。编辑后刷新页面即生效，也可 `PUT /api/config` 更新
-- `uploads/`：上传的素材文件
+## 部署到 Cloudflare
+
+```bash
+npx wrangler d1 create weavereel-db     # 创建远程 D1（把 database_id 填入 wrangler.jsonc）
+npx wrangler r2 bucket create weavereel-uploads
+npm run build:cf                        # OpenNext 构建 worker
+npm run db:migrate:prod                 # 远程 D1 迁移
+npx wrangler secret put SENSENOVA_API_KEY
+npm run deploy:cf
+```
 
 ## 功能
 
-### 画布模式
-- 节点类型：文本 / 图片 / 九宫格（含 2/4 格变体）/ 视频 / 音频 / 合成视频
-- 连线：拖动节点两侧 ＋ 端口连接；拖到空白处快速创建并连接；右键连线删除
-- 连线中点 ⊕：点击在两个节点之间插入新节点
+### 场景模板库（一键套用）
+- 左侧栏内置 6 套不同场景的预连线画布模板：旅行 Vlog、美食探店、产品发布、知识科普、情感短剧、宠物日常
+- 每套模板是一个完整创作流水线（文案 → 分镜 → 画面 → 合成），点击即整张画布套用，`Ctrl+Z` 可撤销
+- 媒体节点每次套用自动换随机 seed，同一模板每次长出不同画面；文案节点预填示例文案，可直接「⏩ 链式生成」跑通全链
+
+### 画布模式：四种内容类型，每类有专属处理能力
+- **节点四种类型**：文案 📝 / 图片 🖼 / 视频 🎬（模拟）/ 音频 🎵
+- **每种类型有专属能力工具条**（对齐参考产品）：
+  - 图片：全景 · 多角度 · 九宫格 · 画面切分 · 打光 · 故事推演 · 对口型 · 消除笔 · 图片超清
+  - 视频：截取帧（生成图片子节点）· 视频增强 · 去字幕 · 音频分离（生成音频子节点）
+  - 文案：润色 · 扩写 · 分镜拆解 · 提取角色 · 翻译
+  - 音频：变奏 · 人声分离 · 循环 · 对口型
+- **九宫格与合成视频是能力产物**，不在素材库：图片的「九宫格」能力生成九宫格子节点（5 种分镜技能），「⚡ 合成视频」能力生成合成节点（进编辑器的入口）
+- 连线即语义（线上有标签，左下角有图例）：**可视化**（文案→图片，蓝）/ **参考**（图片→图片，绿）/ **拆解·提升**（素材→九宫格、九宫格→图片，橙）/ **入片**（素材→合成视频，红）；非法连线直接拒绝并提示可连目标
+- **节点分组（绑定）**：把一条镜头链绑成一个命名组（如「主体图 → 特效参考图 → 视频」=「棒球赛现场Live」）——Shift+点击多选直接成组，或单选节点连带全部上游成组；组有名标题、虚线包围盒，拖组名整组移动，✎ 重命名 / ✕ 解散；套用场景模板自动成组
+- 九宫格格子可「⬆ 提升为图片节点」，接入合成视频；合成视频节点显示汇集清单，点「⬈ 进编辑器剪辑」进时间线
+- 自动布局按创作流分列：文案 → 图片/视频 → 音频 → 合成视频
 
 ### 节点联动（连线即数据流）
 - 生成时自动递归收集上游节点内容：文本节点的正文、图片/视频节点的参考图，随 `POST /api/generate` 的 `context` 字段发给服务端
 - **参考图真实引用**：生图模型只接受文本输入，服务端先用视觉模型（`provider.sensenova.visionModel`，input 含 image）"看"上游参考图输出画面描述（主体/构图/色调/风格，带 30 分钟缓存），再合并进下游生图/文案提示词
 - 引用方式分级：`described`（视觉模型已参考图片）→ 限流/失败时 `note`（仅提示词文字说明）→ 未配 key 时 `reused`（模拟模式直接沿用参考素材作为结果，演示引用效果），任务返回 `refMode` 字段，节点卡片显示「🖼 已参考画面 / 沿用素材」
 - **九宫格分镜联动**：上游文案按句拆分，九宫格每格用对应句子作提示词（真实"文本→分镜"管线），每格实际提示词可通过右键「📋 查看生成提示词」查看
+- **九宫格技能模式**：图片生成 Tab 内置 5 种分镜技能，服务端按技能出不同逐格节拍——💡 灵感风暴（同主题创意发散）/ 📖 故事叙述（起承转合故事弧）/ 🥋 武打分镜（对峙到收势九拍）/ 🎥 全景机位（同场景九种机位语言）/ 💃 舞蹈动作（起势到谢幕动作分解）；上游剧情句自动融合进节拍，九格附成组一致性约束；九宫格节点上切换技能即按新技能重新生成（任务记录 `gridMode`）
 - **合成视频聚合上游**：合成片节点把收集到的多张上游画面拼成胶片条预览（`GET /api/compose?frames=...`）
 - 模拟链路同样联动：下游节点延续上游画面 seed（`linkSeed`），未配置 key 时占位图也保持同一画面基调；合成片预览胶片条、视频封面用上游参考图
 - 占位提示词（"双击或点击下方输入框…"、"上传素材：…"等）不会作为上游文案传入下游
@@ -60,7 +84,8 @@ node server.js
 - 画布自动保存到服务端（300ms 防抖），刷新后恢复
 
 ### 编辑器模式（由画布真实节点驱动）
-- 时间线三轨实时来自画布：视频轨 = 媒体节点（缩略图胶片块、按时长排布），音频轨 = 音频节点，字幕轨 = 文本节点正文按句拆分
+- 时间线取材遵循「入片」关系：有成片节点且接了素材 → 只取其多级上游；否则回退全部媒体节点。镜头顺序 = 画布空间顺序（左 → 右流水线）；成片节点本身不作为镜头
+- 三轨：视频轨 = 镜头/分镜/视频节点（缩略图胶片块），音频轨 = 音频节点，字幕轨 = 文案节点正文按句拆分
 - ▶ 播放：播放头走动，预览图随镜头自动切换；⬇ 导出成片：canvas Ken-Burns 推近渲染 + MediaRecorder 录制，直接下载 webm（720P·30fps，含字幕与镜头角标）
 - 合成视频（edit）节点模拟生成时，前端 canvas 拼接上游画面为胶片条预览
 - 选中节点 → 上方浮动 AI 能力工具条（全景/多角度/九宫格/打光/故事推演/对口型…）
@@ -70,9 +95,9 @@ node server.js
 文本与图片生成已接入商汤 SenseNova（OpenAI 兼容网关 `https://token.sensenova.cn/v1`）：
 
 - 文本：`POST /v1/chat/completions`（`thinking: disabled` 直接输出正文）
-- 图片：`POST /v1/images/generations`，生成图自动下载到 `uploads/` 防外链过期
+- 图片：`POST /v1/images/generations`，生成图自动下载转存 R2（`/uploads/...` 读回）防外链过期
 - 文生图尺寸按面板比例自动映射（16:9 / 9:16 / 1:1 / 4:3 / 21:9）
-- key 与默认模型在 `data/config.json` 的 `provider.sensenova`；可用模型以网关 `GET /v1/models` 为准
+- key 与默认模型在 D1 `settings` 表（`id = "model-config"`，首次访问自动从 `.dev.vars` / 环境变量 `SENSENOVA_*` 播种）；可用模型以网关 `GET /v1/models` 为准
 - `visionModel`：视觉理解模型（input 含 image），用于"看"参考图生成画面描述；侧栏状态灯实时显示通道可用性（后台每 5 分钟探测，恢复即自动生效）
 - 视频/音频生成暂为模拟（该网关暂无相应模型）；未配置 key 时全部回退模拟
 
@@ -83,12 +108,13 @@ node server.js
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/api/project` | 读取画布项目 |
-| GET | `/api/config` | 读取模型配置（`data/config.json`） |
+| GET | `/api/config` | 读取模型配置（D1 `settings`，缺省从环境变量播种） |
 | PUT | `/api/config` | 更新模型配置 |
 | PUT | `/api/project` | 保存画布 |
 | POST | `/api/upload` | 上传素材（raw body，`X-Filename` 头） |
 | POST | `/api/generate` | 创建生成任务 `{type, prompt, seed, count, model, ratio, linkSeed, context:{texts[],images[]}}` |
 | GET | `/api/tasks/:id` | 任务进度与结果 |
+| GET | `/api/templates` | 场景模板库（预连线画布模板） |
 | GET | `/api/vision-status` | 视觉参考通道可用性（后台每 5 分钟自动探测） |
 | GET | `/api/compose` | 合成片胶片条预览（`?frames=/uploads/a.jpg,...`） |
 | GET | `/api/scene/:seed` | 服务端生成风景占位图（SVG） |
@@ -97,19 +123,24 @@ node server.js
 ## 目录
 
 ```
-server.js        零依赖后端（静态托管 + API + 任务调度 + 视觉参考探测）
+src/
+  app/
+    page.tsx                画布工作台页面壳（React 19 客户端组件）
+    globals.css             全局样式
+    api/
+      project/  config/     D1 读写（画布 / 模型配置，PUT /api/config 更新）
+      generate/ tasks/[id]/ 生成任务（D1 落库 + waitUntil 异步执行 + 轮询）
+      upload/               素材上传 → R2（uploads/[key] 流式读回）
+      scene/ wave/ compose/ SVG 生成器（占位图 / 波形 / 胶片条）
+      vision-status/        视觉参考通道可用性探测
+  db/           Drizzle schema 与客户端（projects / settings / tasks 三表）
+  lib/          sensenova.ts（文本/图片/视觉描述+限流降级）· tasks.ts（任务管线）· svg.ts
 public/
-  index.html     页面结构
-  style.css      样式
-  app.js         画布引擎 + 编辑器 + API 对接
-data/            运行时生成：config.json（密钥，勿提交）/ project.json（画布）
-uploads/         素材与生成图（运行时生成）
+  weavereel.js  画布引擎（节点/连线/链式生成/编辑器导出，纯前端）
+src/drizzle/    D1 迁移（drizzle-kit generate 生成）
+docs/           产品截图
 ```
 
-## 首次运行
-
-```bash
-node server.js          # 首次启动自动生成 data/config.json
-# 编辑 data/config.json 填入你的 API key（模板见 data/config.example.json）
-# 打开 http://localhost:3000
-```
+说明：画布引擎为浏览器端纯 JS（`public/weavereel.js`），功能行为与原版完全一致；
+服务端由零依赖 `server.js` 迁移为 Next.js Route Handlers + Cloudflare 绑定（D1/R2），
+任务进度按创建时间无状态推进（天然适配 Workers 多隔离实例）。
