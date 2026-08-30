@@ -7,5 +7,5 @@ export const dynamic = "force-dynamic";
 /** GET /api/auth/status → { authed: boolean } */
 export async function GET(req: NextRequest) {
     const { env } = await getCloudflareContext();
-    return NextResponse.json({ authed: isAuthed(req, env as Record<string, string | undefined>) });
+    return NextResponse.json({ authed: isAuthed(req, env as unknown as Record<string, string | undefined>) });
 }

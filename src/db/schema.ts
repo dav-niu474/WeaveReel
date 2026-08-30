@@ -35,3 +35,14 @@ export const tasks = sqliteTable("tasks", {
     cellPromptsJson: text("cell_prompts_json"),
     shotsJson: text("shots_json"),
 });
+
+/** 作品库：每次生成的图片成果持久登记（不随画布节点删除而消失），
+    published=1 的作品出现在素材库供模板式复用 */
+export const works = sqliteTable("works", {
+    id: text("id").primaryKey(),
+    url: text("url").notNull(),
+    prompt: text("prompt").notNull().default(""),
+    kind: text("kind").notNull().default("image"), // image | video
+    published: integer("published").notNull().default(0),
+    createdAt: integer("created_at").notNull(),
+});

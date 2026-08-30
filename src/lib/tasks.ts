@@ -1,7 +1,7 @@
 /* 织影 WeaveReel — 生成任务：D1 落库 + waitUntil 异步执行 + 按耗时推进度 */
 import { eq } from "drizzle-orm";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
-import { tasks, settings } from "@/db/schema";
+import { tasks, settings, works } from "@/db/schema";
 import { getDb } from "@/db";
 import { callSNImage, callSNText, describeRefImage, getProvider, type TaskContext } from "./sensenova";
 import { sizeFromRatio } from "./svg";
@@ -172,6 +172,16 @@ export async function runTask(taskId: string, opts: { model?: string; ratio?: st
                 cellPromptsJson: shots.length ? JSON.stringify(cellPrompts) : null,
                 shotsJson: shots.length ? JSON.stringify(shots) : null,
             }).where(eq(tasks.id, taskId));
+            // 登记进作品库（历史生成不随画布节点删除而消失）
+            if (urls.length) {
+                await db.insert(works).values(urls.map((u, i) => ({
+                    id: "w" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+                    url: u,
+                    prompt: (cellPrompts[i] || t.prompt || "").slice(0, 500),
+                    kind: "image",
+                    createdAt: Date.now() + i,
+                })));
+            }
         }
     } catch (err) {
         await db.update(tasks).set({ status: "error", error: String((err as Error).message || err) }).where(eq(tasks.id, taskId));

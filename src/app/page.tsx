@@ -104,6 +104,7 @@ export default function Home() {
             <div className="dock" id="dock">
                 <button className="dock-btn accent" id="dockAdd" title="新增：节点类型与场景模板">＋</button>
                 <button className="dock-btn" id="dockAssets" title="资产库：项目中产生的图片/视频资产">🧊</button>
+                <button className="dock-btn" id="dockWorks" title="作品库：历史生成的作品">🖼</button>
                 <button className="dock-btn" id="dockSubjects" title="主体库：预置 IP 形象">🧑‍🎤</button>
                 <button className="dock-btn" id="dockStock" title="素材库：场景素材">🗂</button>
                 <button className="dock-dot" id="dockVision" title="视觉参考通道状态">●</button>

@@ -45,7 +45,7 @@ async function ensureConfig(): Promise<{ data: unknown; env: Record<string, stri
 
 export async function GET() {
     const { data } = await ensureConfig();
-    return NextResponse.json({ ...data, presets: PROVIDER_PRESETS });
+    return NextResponse.json({ ...(data as object), presets: PROVIDER_PRESETS });
 }
 
 export async function PUT(req: Request) {

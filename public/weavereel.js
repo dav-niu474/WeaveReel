@@ -55,6 +55,16 @@ const api = {
     if (!r.ok) throw new Error('GET /api/assets ' + r.status);
     return r.json();
   },
+  async getWorks(publishedOnly) {
+    const r = await fetch('/api/works' + (publishedOnly ? '?published=1' : ''));
+    if (!r.ok) throw new Error('GET /api/works ' + r.status);
+    return r.json();
+  },
+  async publishWorks(ids, publish) {
+    const r = await fetch('/api/works', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: publish ? 'publish' : 'unpublish', ids }) });
+    if (!r.ok) throw new Error('POST /api/works ' + r.status);
+    return r.json();
+  },
 };
 const sceneURL = (seed) => '/api/scene/' + (Math.abs(seed) % 97);
 const waveURL = () => '/api/wave';
@@ -1137,15 +1147,15 @@ $('gSend').addEventListener('click', () => {
 /* ============ 右侧 Dock：新增 / 资产库 / 主体库 / 素材库 ============ */
 let assetsCache = null;   // { subjects, scenes } 预置资产
 let activeDock = null;    // 'add' | 'assets' | 'subjects' | 'stock'
-const DOCK_TITLES = { add: '新增节点', assets: '资产库', subjects: '主体库', stock: '素材库' };
+const DOCK_TITLES = { add: '新增节点', assets: '资产库', works: '作品库 · 历史生成', subjects: '主体库', stock: '素材库' };
 function toggleDock(section) {
   activeDock = activeDock === section ? null : section;
   document.querySelectorAll('.dock-btn').forEach(x => x.classList.remove('active'));
   if (!activeDock) { $('dockPanel').classList.remove('show'); return; }
-  $(section === 'add' ? 'dockAdd' : section === 'assets' ? 'dockAssets' : section === 'subjects' ? 'dockSubjects' : 'dockStock').classList.add('active');
+  $(section === 'add' ? 'dockAdd' : section === 'assets' ? 'dockAssets' : section === 'works' ? 'dockWorks' : section === 'subjects' ? 'dockSubjects' : 'dockStock').classList.add('active');
   $('dpTitle').textContent = DOCK_TITLES[section];
   $('dockPanel').classList.add('show');
-  ({ add: renderDockAdd, assets: renderDockAssets, subjects: renderDockSubjects, stock: renderDockStock })[section]();
+  ({ add: renderDockAdd, assets: renderDockAssets, works: renderDockWorks, subjects: renderDockSubjects, stock: renderDockStock })[section]();
 }
 /* 在画布中部空白处新增节点并选中 */
 function addNodeOfType(type) {
@@ -1204,6 +1214,45 @@ function renderDockAssets() {
     grid.appendChild(d);
   });
 }
+/* 面板：作品库（历史生成，可勾选发布到素材库） */
+let worksSel = new Set();
+async function renderDockWorks() {
+  const box = $('dpBody');
+  box.innerHTML = '<div class="dp-sec">历史生成的作品 · 点击勾选</div><div class="dp-grid" id="dpWorks"><div class="dp-empty">加载中…</div></div>' +
+    '<div class="dp-actions"><button class="dp-act" id="dwAdd">⬎ 加入画布</button><button class="dp-act pri" id="dwPub">📤 发布到素材库</button></div>';
+  try {
+    const d = await api.getWorks();
+    const list = d.works || [];
+    const grid = box.querySelector('#dpWorks');
+    grid.innerHTML = list.length ? '' : '<div class="dp-empty">还没有生成记录：跑一次生成就会出现在这里</div>';
+    list.forEach(w => {
+      const d = document.createElement('div');
+      d.className = 'dp-tile' + (w.published ? ' pub' : '') + (worksSel.has(w.id) ? ' sel' : '');
+      d.title = (w.prompt || '').slice(0, 80) + (w.published ? '（已发布到素材库）' : '');
+      d.innerHTML = '<div class="dp-thumb"><img src="' + w.url + '" loading="lazy">' + (w.published ? '<i class="dp-flag">已发布</i>' : '') + '</div><span>' + (w.published ? '已发布' : new Date(w.createdAt).toLocaleDateString('zh-CN')) + '</span>';
+      d.onclick = () => { worksSel.has(w.id) ? worksSel.delete(w.id) : worksSel.add(w.id); d.classList.toggle('sel'); };
+      grid.appendChild(d);
+    });
+    box.querySelector('#dwAdd').onclick = () => {
+      if (!worksSel.size) { toast('请先勾选作品'); return; }
+      list.filter(w => worksSel.has(w.id)).forEach(w => addAssetNode(w.url, '作品', w.prompt || ''));
+      worksSel.clear(); renderDockWorks();
+      toast('⬎ 已把选中作品加入画布');
+    };
+    box.querySelector('#dwPub').onclick = async () => {
+      if (!worksSel.size) { toast('请先勾选要发布的作品'); return; }
+      const ids = [...worksSel];
+      try {
+        await api.publishWorks(ids, true);
+        worksSel.clear();
+        toast('📤 已发布 ' + ids.length + ' 个作品到素材库（左侧 🗂 可查看）');
+        renderDockWorks();
+      } catch (e) { toast('发布失败：' + e.message); }
+    };
+  } catch (e) {
+    box.querySelector('#dpWorks').innerHTML = '<div class="dp-empty">加载失败：' + e.message + '</div>';
+  }
+}
 /* 面板：主体库 / 素材库（预置资产） */
 function renderPresetGrid(list, box, labelPrefix) {
   const grid = box.querySelector('#dpAssets');
@@ -1224,18 +1273,37 @@ function renderDockSubjects() {
     (assetsCache ? '' : '<div class="dp-empty">加载中…</div>');
   if (assetsCache) renderPresetGrid(assetsCache.subjects, box, '主体');
 }
-function renderDockStock() {
+async function renderDockStock() {
   const box = $('dpBody');
-  box.innerHTML = '<div class="dp-sec">场景素材 · 点击加入画布</div><div class="dp-grid" id="dpAssets"></div>' +
+  box.innerHTML = '<div class="dp-sec">已发布作品 · 模板式复用</div><div class="dp-grid" id="dpPub"><div class="dp-empty">加载中…</div></div>' +
+    '<div class="dp-sec">场景素材 · 点击加入画布</div><div class="dp-grid" id="dpAssets"></div>' +
     (assetsCache ? '' : '<div class="dp-empty">加载中…</div>') +
     '<div class="dp-sec">场景模板 · 整张画布一键套用</div><div class="dp-tps" id="dpTps">' +
     (tplCache ? '' : '<div class="dp-empty">模板加载中…</div>') + '</div>';
   if (assetsCache) renderPresetGrid(assetsCache.scenes, box, '素材');
   if (tplCache) renderTemplates(tplCache, box.querySelector('#dpTps'));
+  try {
+    const d = await api.getWorks(true);
+    const list = d.works || [];
+    const pub = box.querySelector('#dpPub');
+    pub.innerHTML = list.length ? '' : '<div class="dp-empty">暂无：在「🖼 作品库」勾选作品点「发布到素材库」</div>';
+    list.forEach(w => {
+      const d = document.createElement('div');
+      d.className = 'dp-tile';
+      d.title = (w.prompt || '').slice(0, 80);
+      d.innerHTML = '<div class="dp-thumb"><img src="' + w.url + '" loading="lazy"></div><span>' + (w.prompt || '作品').slice(0, 10) + '</span>';
+      d.onclick = () => addAssetNode(w.url, '素材', w.prompt || '');
+      d.draggable = true;
+      d.addEventListener('dragstart', ev => ev.dataTransfer.setData('asset', JSON.stringify({ url: w.url, label: '素材 · 作品', prompt: w.prompt || '' })));
+      pub.appendChild(d);
+    });
+  } catch (_) {
+    box.querySelector('#dpPub').innerHTML = '<div class="dp-empty">已发布作品加载失败</div>';
+  }
 }
 function closeDock() { if (activeDock) toggleDock(activeDock); }
 function initDock() {
-  [['dockAdd', 'add'], ['dockAssets', 'assets'], ['dockSubjects', 'subjects'], ['dockStock', 'stock']]
+  [['dockAdd', 'add'], ['dockAssets', 'assets'], ['dockWorks', 'works'], ['dockSubjects', 'subjects'], ['dockStock', 'stock']]
     .forEach(([id, sec]) => { $(id).onclick = () => toggleDock(sec); });
   $('dpClose').onclick = () => toggleDock(activeDock);
   $('dockVision').onclick = () => { toast($('dockVision').title || '视觉参考通道状态未知'); };
