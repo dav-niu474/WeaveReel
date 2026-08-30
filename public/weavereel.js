@@ -247,18 +247,11 @@ function renderNode(n) {
     : (media ? `<div class="node-media">${media}${statusChip(n)}${runMask}</div>` : '');
   const cardW = (n.type === 'nine' && (n.cells || 9) <= 4) ? ' style="width:340px"' : '';
   const promptRow = (n.type !== 'text') ? `<div style="padding:9px 14px 12px;font-size:12px;color:var(--text-dim);line-height:1.6;max-width:${n.type === 'nine' ? '420px' : '340px'};display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">💬 ${n.prompt || ''}</div>` : '';
-  /* 引用来源行：列出直接上游节点；上游内容与上次生成时不一致则提示同步 */
-  const ups = directUpstreams(n.id);
+  /* 上游引用不再用文字标记表达：参考素材以缩略图形式自动出现在生成面板「上传/选择」区。
+     节点卡片只保留「⚠ 上游已更新 · 同步」这一个动作角标 */
+  const ups = directUpstreams(n.id);   // 合成视频节点的汇集清单用
   const stale = isStale(n);
-  const refTip = { described: '🖼 已参考画面', reused: '🖼 沿用素材' }[n.refMode] || '';
-  const refRow = (ups.length || stale) ? `<div class="in-ref">` +
-    (ups.length ? `<span class="ref-lead">🔗 引用</span>` + ups.slice(0, 4).map(u => {
-      const nm = u.label || (u.prompt || '').slice(0, 10) || TYPES[u.type].label;
-      return `<span class="ref-chip" style="color:${TYPES[u.type].color}" title="${esc(u.prompt || TYPES[u.type].label)}">${TYPES[u.type].icon} ${esc(nm)}</span>`;
-    }).join('') + (ups.length > 4 ? `<span class="ref-chip">+${ups.length - 4}</span>` : '') : '') +
-    (ups.length && refTip ? `<span class="ref-chip ok" title="生成时已实际使用上游内容">${refTip}</span>` : '') +
-    (stale ? `<span class="ref-chip stale" data-sync="${n.id}" title="上游内容已变化，点击重新生成本节点以同步最新内容">⚠ 上游已更新 · 同步</span>` : '') +
-    `</div>` : '';
+  const refRow = stale ? `<div class="in-ref"><span class="ref-chip stale" data-sync="${n.id}" title="上游内容已变化，点击重新生成本节点以同步最新内容">⚠ 上游已更新 · 同步</span></div>` : '';
   /* 成片节点：显示汇集清单 + 进编辑器按钮（它不生成，只组装） */
   const editFoot = n.type === 'edit' ? `<div class="ed-stats">${ups.filter(u => u.type === 'image' || u.type === 'nine' || u.type === 'video').length} 素材 · ${ups.filter(u => u.type === 'text').length} 文案 · ${ups.filter(u => u.type === 'audio').length} 音频</div>
     <button class="ed-open" data-ed="${n.id}">⬈ 进编辑器剪辑</button>` : '';
@@ -930,11 +923,38 @@ const GEN_TABS = {
   audio: { ph: '输入你想要创作的音乐内容', models: ['Mureka V9', 'Mureka V6', 'Suno V4'], ratio: [], count: ['1首'], cost: 3, upload: false, tabDefault: ['audio'] },
 };
 let curTab = 'image';
+/* 节点类型 → 允许的生成 Tab：选中节点时面板只出现属于该类型的功能 */
+const TYPE_TAB = { text: 'text', image: 'image', nine: 'image', video: 'video', audio: 'audio', edit: null };
+/* 收集当前节点将自动携带的参考图（自身 + 多级上游），渲染为面板缩略图 */
+function renderRefChips(n) {
+  const row = $('gUploads');
+  if (!row) return;
+  row.querySelectorAll('.ref-thumb').forEach(e => e.remove());
+  if (!n) return;
+  const self = selfRefs(n);
+  const up = collectContext(n.id);
+  const refs = [...self.images, ...up.images].slice(0, 4);
+  refs.forEach(im => {
+    const d = document.createElement('div');
+    d.className = 'ref-thumb';
+    d.title = '已自动引用的参考素材：' + im.label + '（生成时随提示词一起送给模型）';
+    d.innerHTML = `<img src="${im.urls[0]}" alt=""><span>${esc((im.label || '参考').slice(0, 6))}</span>`;
+    row.appendChild(d);
+  });
+  return refs.length;
+}
 function setTab(tab) {
   curTab = tab;
   const cfg = GEN_TABS[tab];
-  document.querySelectorAll('#gTabs button[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-  $('gUploads').style.display = cfg.upload ? 'flex' : 'none';
+  const n = nodes.find(x => x.id === selected);
+  const allowed = n ? TYPE_TAB[n.type] : null;   // 选中节点 → 只显示该类型自己的生成 Tab
+  document.querySelectorAll('#gTabs button[data-tab]').forEach(b => {
+    b.style.display = (!allowed || b.dataset.tab === allowed) ? '' : 'none';
+    b.classList.toggle('active', b.dataset.tab === tab);
+  });
+  document.querySelectorAll('#gTabs .tsep').forEach(s => s.style.display = allowed ? 'none' : '');
+  const refCount = renderRefChips(n) || 0;
+  $('gUploads').style.display = (cfg.upload || refCount) ? 'flex' : 'none';
   $('gInput').placeholder = cfg.ph;
   $('gModel').innerHTML = cfg.models.map(m => `<option>${m}</option>`).join('');
   const ratioSel = $('gRatio');
@@ -947,7 +967,6 @@ function setTab(tab) {
   if (gm) {
     gm.style.display = tab === 'image' ? 'flex' : 'none';
     if (tab === 'image') {
-      const n = nodes.find(x => x.id === selected);
       if (n && n.type === 'nine' && n.gridMode) gridMode = n.gridMode;
       renderGridModes(gridMode);
     }
@@ -998,9 +1017,24 @@ function findSpot(srcX, srcY, w, h) {
 $('gSend').addEventListener('click', () => {
   const txt = $('gInput').value.trim();
   if (!txt) { toast('请输入生成内容'); return; }
-  pushUndo();
   const cfg = GEN_TABS[curTab];
   const src = nodes.find(x => x.id === selected);
+  /* 选中节点 → ↑ 就是运行当前节点（用面板里的提示词/模型/比例重新生成），不再新建下游节点 */
+  if (src) {
+    if (src.type === 'edit') { toast('合成视频节点请在编辑器中剪辑导出'); return; }
+    if (src.status === 'running') { toast('⏳ 当前节点正在生成中…'); return; }
+    pushUndo();
+    src.prompt = txt;
+    startGen(src, '运行 · ' + TYPES[src.type].label, {
+      count: (src.type === 'nine' && src.cells) ? src.cells : 1,
+      model: $('gModel').value,
+      ratio: curTab === 'image' ? $('gRatio').value : undefined,
+    });
+    save();
+    return;
+  }
+  /* 未选中节点 → 在画布中央新建节点并运行 */
+  pushUndo();
   const r = wrap.getBoundingClientRect();
   const cx = (r.width / 2 - panX) / scale, cy = (r.height / 2 - panY) / scale;
   let type = curTab === 'text' ? 'text' : curTab === 'image' ? 'image' : curTab === 'video' ? 'video' : 'audio';
@@ -1010,16 +1044,8 @@ $('gSend').addEventListener('click', () => {
   if (curTab === 'image' && $('gCount').value === '4张') Object.assign(extra, { type: 'nine', cells: 4, cols: 2, label: '四宫格 · ' + gridModeLabel(gridMode), gridMode });
   if (curTab === 'image' && $('gCount').value === '2张') Object.assign(extra, { type: 'nine', cells: 2, cols: 2, label: '双图对比', gridMode });
   if (extra.type) type = extra.type;
-  let n;
-  const vseed = Math.floor(Math.random() * 97);
-  if (src) {
-    const spot = findSpot(src.x + 480, src.y + (Math.random() * 80 - 40), 380, 280);
-    n = { id: uid(), type, x: spot.x, y: spot.y, status: 'idle', prompt: txt, vseed, dur: type === 'video' ? $('gCount').value : '—', ...extra };
-  } else {
-    n = { id: uid(), type, x: Math.round(cx - 170), y: Math.round(cy - 120), status: 'idle', prompt: txt, vseed, dur: type === 'video' ? $('gCount').value : '—', ...extra };
-  }
+  const n = { id: uid(), type, x: Math.round(cx - 170), y: Math.round(cy - 120), status: 'idle', prompt: txt, vseed: Math.floor(Math.random() * 97), dur: type === 'video' ? $('gCount').value : '—', ...extra };
   nodes.push(n);
-  if (src) addEdge(src.id, n.id);
   selected = n.id; render(); openPanel();
   startGen(n, cfg.models[0], {
     count: (type === 'nine' && n.cells) ? n.cells : 1,
