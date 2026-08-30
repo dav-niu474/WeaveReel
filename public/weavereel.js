@@ -1166,7 +1166,7 @@ $('gSend').addEventListener('click', () => {
 /* ============ 右侧 Dock：新增 / 资产库 / 主体库 / 素材库 ============ */
 let assetsCache = null;   // { subjects, scenes } 预置资产
 let activeDock = null;    // 'add' | 'assets' | 'subjects' | 'stock'
-const DOCK_TITLES = { add: '新增节点', assets: '资产库 · 项目产出', subjects: '主体库 · IP 形象', stock: '素材库 · 场景素材' };
+const DOCK_TITLES = { add: '新增节点', assets: '资产库 · 项目产出', subjects: '主体库 · IP 形象', stock: '素材库 · 场景素材与模板' };
 function toggleDock(section) {
   activeDock = activeDock === section ? null : section;
   document.querySelectorAll('.dock-btn').forEach(x => x.classList.remove('active'));
@@ -1195,9 +1195,7 @@ function addAssetNode(url, label, prompt) {
 /* 面板：新增（节点类型 + 场景模板） */
 function renderDockAdd() {
   const box = $('dpBody');
-  box.innerHTML = '<div class="dp-sec">节点类型 · 点击新增</div><div class="dp-grid" id="dpTypes"></div>' +
-    '<div class="dp-sec">场景模板 · 一键套用</div><div class="dp-tps" id="dpTps">' +
-    (tplCache ? '' : '<div class="dp-empty">模板加载中…</div>') + '</div>';
+  box.innerHTML = '<div class="dp-sec">节点类型 · 点击新增</div><div class="dp-grid" id="dpTypes"></div>';
   const types = box.querySelector('#dpTypes');
   Object.entries(TYPES).filter(([k]) => !['nine', 'edit'].includes(k)).forEach(([k, t]) => {
     const d = document.createElement('div');
@@ -1206,7 +1204,6 @@ function renderDockAdd() {
     d.onclick = () => addNodeOfType(k);
     types.appendChild(d);
   });
-  if (tplCache) renderTemplates(tplCache, box.querySelector('#dpTps'));
 }
 /* 面板：资产库（画布里一切真实图片/视频资产） */
 function renderDockAssets() {
@@ -1254,8 +1251,11 @@ function renderDockSubjects() {
 function renderDockStock() {
   const box = $('dpBody');
   box.innerHTML = '<div class="dp-sec">场景素材 · 点击加入画布</div><div class="dp-grid" id="dpAssets"></div>' +
-    (assetsCache ? '' : '<div class="dp-empty">加载中…</div>');
+    (assetsCache ? '' : '<div class="dp-empty">加载中…</div>') +
+    '<div class="dp-sec">场景模板 · 整张画布一键套用</div><div class="dp-tps" id="dpTps">' +
+    (tplCache ? '' : '<div class="dp-empty">模板加载中…</div>') + '</div>';
   if (assetsCache) renderPresetGrid(assetsCache.scenes, box, '素材');
+  if (tplCache) renderTemplates(tplCache, box.querySelector('#dpTps'));
 }
 function initDock() {
   [['dockAdd', 'add'], ['dockAssets', 'assets'], ['dockSubjects', 'subjects'], ['dockStock', 'stock']]
