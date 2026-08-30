@@ -66,31 +66,24 @@ const nodeText = n => n.type === 'text' ? (n.story || n.prompt || '') : (n.promp
 const nodeUrls = n => n.type === 'nine' ? (n.urls || []) : (n.url ? [n.url] : []);
 const seedOfNode = n => n.vseed != null ? n.vseed : (n.url ? hashStr(n.url) % 97 : hashStr(n.prompt || n.id) % 97);
 /* 递归收集上游（多级）：文本进 texts、真实图片进 images、首个媒体节点的 seed 供模拟链路延续画面 */
+/* 引用模型：只收集输入端直接上游的内容（不递归整条链）。
+   链式传递由中间节点承载——上游输出即下游输入，逐级加工 */
 function collectContext(id) {
-  const texts = [], images = [], seen = new Set([id]);
+  const texts = [], images = [];
   let seed = null;
-  let frontier = directUpstreams(id).map(u => u.id);
-  while (frontier.length) {
-    const nxt = [];
-    for (const uid of frontier) {
-      if (seen.has(uid)) continue; seen.add(uid);
-      const u = nodes.find(x => x.id === uid); if (!u) continue;
-      const t = nodeText(u).trim();
-      if (t && !PLACEHOLDER_RE.test(t)) texts.push({ label: u.label || TYPES[u.type].label, text: t.slice(0, 500) });
-      const realUrls = nodeUrls(u).filter(x => x && !x.startsWith('/api/')).slice(0, 4);
-      if (realUrls.length) images.push({ label: u.label || TYPES[u.type].label, url: realUrls[0], urls: realUrls });
-      if (seed === null && u.type !== 'text' && hasContent(u)) seed = seedOfNode(u);
-      directUpstreams(uid).forEach(p => nxt.push(p.id));
-    }
-    frontier = nxt;
+  for (const u of directUpstreams(id)) {
+    if (!u) continue;
+    const t = nodeText(u).trim();
+    if (t && !PLACEHOLDER_RE.test(t)) texts.push({ label: u.label || TYPES[u.type].label, text: t.slice(0, 500) });
+    const realUrls = nodeUrls(u).filter(x => x && !x.startsWith('/api/')).slice(0, 4);
+    if (realUrls.length) images.push({ label: u.label || TYPES[u.type].label, url: realUrls[0], urls: realUrls });
+    if (seed === null && u.type !== 'text' && hasContent(u)) seed = seedOfNode(u);
   }
   return { texts, images, seed, count: texts.length + images.length };
 }
 /* 上游内容快照：完成生成时记录在节点上；之后上游内容/连线变化即可判定「上游已更新」 */
 function upstreamState(id) {
-  const ids = new Set();
-  (function walk(pid) { if (ids.has(pid)) return; ids.add(pid); directUpstreams(pid).forEach(u => walk(u.id)); })(id);
-  const inner = edges.filter(e => ids.has(e.from) && ids.has(e.to)).map(e => e.from + '>' + e.to).sort();
+  const inner = edges.filter(e => e.to === id).map(e => e.from + '>' + e.to).sort();
   const ctx = collectContext(id);
   return JSON.stringify([ctx.texts, ctx.images.map(i => i.urls), inner]);
 }
