@@ -40,7 +40,7 @@ export default function Home() {
                 <div className="empty-hint" id="emptyHint">
                     <div className="big">🎞</div>
                     <b>画布空空如也</b>
-                    <span>① 左侧选模板套用 ② 改文案 ③ ⏩ 链式生成 ④ ⬈ 成片节点进编辑器<br />右键画布可快速创建 · 连线颜色见左下图例</span>
+                    <span>① 左侧选模板套用 ② 改文案 ③ ⏩ 链式生成 ④ ⚡ 合成视频进编辑器<br />每种节点有专属能力工具条 · 连线颜色见左下图例</span>
                 </div>
             </div>
 
@@ -50,7 +50,7 @@ export default function Home() {
                 <div className="aitb-sep"></div>
                 <button className="aitb-btn" id="aitbMore" title="更多能力"><span className="ico">⋯</span></button>
                 <div className="aitb-sep"></div>
-                <button className="aitb-btn hl" onClick={call("capCompose")}><span className="ico">⬈</span>入片成片</button>
+                <button className="aitb-btn hl" onClick={call("capCompose")}><span className="ico">⚡</span>合成视频</button>
                 <button className="aitb-btn hl" title="从所选节点沿连线向下游逐级生成（上游输出作为下游输入）" onClick={call("runChain")}><span className="ico">⏩</span>链式生成</button>
                 <button className="aitb-btn" title="复制所选节点" onClick={call("dupSelected")}><span className="ico">⧉</span></button>
                 <button className="aitb-btn" title="上传替换所选节点素材" onClick={call("replaceSelected")}><span className="ico">🔄</span>替换</button>
@@ -116,11 +116,11 @@ export default function Home() {
 
             <div className="toast" id="toast"></div>
             <div className="legend" id="legend" title="点击折叠/展开">
-                <b>画布图例</b>
-                <div className="lg-row"><span className="lg-dot" style={{ background: "#4f8cff" }}></span>可视化：文案 → 镜头</div>
-                <div className="lg-row"><span className="lg-dot" style={{ background: "#3ecf8e" }}></span>参考：镜头 → 镜头（延续风格）</div>
-                <div className="lg-row"><span className="lg-dot" style={{ background: "#f5a623" }}></span>拆解：素材 → 分镜 · ⬆ 提升</div>
-                <div className="lg-row"><span className="lg-dot" style={{ background: "#f5576c" }}></span>入片：素材 → 成片 → 编辑器</div>
+                <b>连线图例</b>
+                <div className="lg-row"><span className="lg-dot" style={{ background: "#4f8cff" }}></span>可视化：文案 → 图片/视频</div>
+                <div className="lg-row"><span className="lg-dot" style={{ background: "#3ecf8e" }}></span>参考：图片 → 图片（延续风格）</div>
+                <div className="lg-row"><span className="lg-dot" style={{ background: "#f5a623" }}></span>拆解：素材 → 九宫格 · ⬆ 提升</div>
+                <div className="lg-row"><span className="lg-dot" style={{ background: "#f5576c" }}></span>入片：素材 → 合成视频 → 编辑器</div>
             </div>
             <div className="ctx-menu" id="ctxMenu">
                 <button onClick={call("ctxAction", "add")}>➕ 添加下游节点</button>

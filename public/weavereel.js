@@ -133,32 +133,31 @@ function extractPalette(url) {
 }
 
 /* ============ 数据模型 ============
-   节点三大角色：asset=素材（成片原子，会出现在成片里）
-                struct=结构（探索产线，产出候选拆解，本身不进成片）
-                group=组装（汇集上游，通向编辑器的出口） */
+   四种内容类型节点：文案 / 图片 / 视频 / 音频 —— 每种类型有自己的处理能力（CAPS）。
+   九宫格（nine）与合成视频（edit）不是素材库类型，而是能力产物：
+   图片节点的「九宫格」能力生成 nine 子节点，「合成视频」能力生成 edit 节点。 */
 const TYPES = {
-  text : { label: '文案',     role: 'asset',  icon: '📝', color: '#4f8cff' },
-  image: { label: '镜头',     role: 'asset',  icon: '🖼', color: '#3ecf8e' },
-  nine : { label: '分镜',     role: 'struct', icon: '▦',  color: '#f5a623' },
-  video: { label: '视频·模拟', role: 'asset',  icon: '🎬', color: '#8b5cf6' },
-  audio: { label: '音频',     role: 'asset',  icon: '🎵', color: '#f06292' },
-  edit : { label: '成片',     role: 'group',  icon: '✂️', color: '#f5576c' },
+  text : { label: '文案',     icon: '📝', color: '#4f8cff' },
+  image: { label: '图片',     icon: '🖼', color: '#3ecf8e' },
+  nine : { label: '九宫格',   icon: '▦',  color: '#f5a623' },
+  video: { label: '视频',     icon: '🎬', color: '#8b5cf6' },
+  audio: { label: '音频',     icon: '🎵', color: '#f06292' },
+  edit : { label: '合成视频', icon: '✂️', color: '#f5576c' },
 };
-const ROLE_NAMES = { asset: '素材', struct: '结构', group: '组装' };
 let nodes = [];
 let edges = [];
 
 /* ============ 连线语义：四种线各有含义，非法连线直接拒绝 ============
-   viz 可视化(蓝)：文案→镜头/视频，把文字画出来
+   viz 可视化(蓝)：文案→图片/视频，把文字画出来
    ref 参考(绿)  ：镜头→镜头 / 图→文案(看图写文案) 等，延续主体与风格
    split 拆解(橙)：任意素材→分镜，拆成多镜头候选
-   promote 提升(橙)：分镜→镜头，把某一格晋升为镜头节点
+   promote 提升(橙)：九宫格→图片，把某一格晋升为图片节点
    into 入片(红) ：素材→成片，进入时间线 */
 const EDGE_OK = {
   text : { text: 1, image: 1, nine: 1, video: 1, edit: 1 },
   image: { text: 1, image: 1, nine: 1, video: 1, edit: 1 },
   nine : { image: 1, video: 1, edit: 1 },
-  video: { nine: 1, edit: 1 },
+  video: { image: 1, nine: 1, audio: 1, edit: 1 },
   audio: { edit: 1 },
   edit : {},
 };
@@ -211,7 +210,7 @@ function mediaHTML(n) {
     const cells = Array.from({ length: cnt }, (_, i) => {
       const src = (n.urls && n.urls[i]) || sceneURL(base + i * 3);
       return `<div class="nine-cell"><img draggable="false" src="${src}" style="width:100%;height:${cnt > 4 ? '78px' : '110px'};object-fit:cover">` +
-        `<button class="cell-promote" data-nine="${n.id}" data-idx="${i}" title="提升为镜头节点（进入成片）">⬆</button></div>`;
+        `<button class="cell-promote" data-nine="${n.id}" data-idx="${i}" title="提升为图片节点（可进合成视频）">⬆</button></div>`;
     }).join('');
     return `<div class="nine-grid" style="grid-template-columns:repeat(${cols},1fr)">${cells}</div>`;
   }
@@ -259,10 +258,10 @@ function renderNode(n) {
     (stale ? `<span class="ref-chip stale" data-sync="${n.id}" title="上游内容已变化，点击重新生成本节点以同步最新内容">⚠ 上游已更新 · 同步</span>` : '') +
     `</div>` : '';
   /* 成片节点：显示汇集清单 + 进编辑器按钮（它不生成，只组装） */
-  const editFoot = n.type === 'edit' ? `<div class="ed-stats">${ups.filter(u => u.type === 'image' || u.type === 'nine' || u.type === 'video').length} 镜头 · ${ups.filter(u => u.type === 'text').length} 文案 · ${ups.filter(u => u.type === 'audio').length} 音乐</div>
+  const editFoot = n.type === 'edit' ? `<div class="ed-stats">${ups.filter(u => u.type === 'image' || u.type === 'nine' || u.type === 'video').length} 素材 · ${ups.filter(u => u.type === 'text').length} 文案 · ${ups.filter(u => u.type === 'audio').length} 音频</div>
     <button class="ed-open" data-ed="${n.id}">⬈ 进编辑器剪辑</button>` : '';
   el.innerHTML = `
-    <div class="node-label"><span style="color:${t.color}">${t.icon}</span>${n.label || t.label}<span class="role-tag role-${t.role}">${ROLE_NAMES[t.role]}</span></div>
+    <div class="node-label"><span style="color:${t.color}">${t.icon}</span>${n.label || t.label}</div>
     <div class="node-card"${cardW}>
       ${body || promptRow}${(n.type === 'text') ? promptRow : ''}${refRow}${editFoot}
       <button class="ndel" data-del="${n.id}" title="删除节点 (Delete)">✕</button>
@@ -493,13 +492,13 @@ function positionFloaters(autoPan) {
 }
 function hideFloaters() { aiToolbar.classList.remove('show'); genPanel.classList.remove('show'); $('moreMenu').style.display = 'none'; }
 
-/* ============ AI 能力（按节点角色分组：素材=处理类，分镜=拆解类，成片=出口类） ============ */
+/* ============ AI 能力：每种节点类型有自己的处理方法（对齐参考产品） ============ */
 const CAPS = {
-  image: [['全景', '🕶'], ['打光', '💡'], ['图片超清', '✨'], ['拆解分镜', '▦'], ['故事推演', '📖']],
+  image: [['全景', '🕶'], ['多角度', '🔄'], ['九宫格', '▦'], ['画面切分', '🖥'], ['打光', '💡'], ['故事推演', '📖'], ['对口型', '👄'], ['消除笔', '🧽'], ['图片超清', '✨']],
+  video: [['截取帧', '🎞'], ['视频增强', '📺'], ['去字幕', '🅰'], ['音频分离', '🎙']],
   nine : [['切换技能', '🎛'], ['提升全部', '⬆'], ['画面切分', '🖥'], ['图片超清', '✨'], ['风格迁移', '🎨']],
-  video: [['故事推演', '📖'], ['慢放', '🐢'], ['循环', '🔁']],
   text : [['润色', '✒️'], ['扩写', '📖'], ['分镜拆解', '🎬'], ['提取角色', '🧑‍🎤'], ['翻译', '🌐']],
-  audio: [['变奏', '🎼'], ['循环', '🔁']],
+  audio: [['变奏', '🎼'], ['人声分离', '🎙'], ['循环', '🔁'], ['对口型', '👄']],
   edit : [['进编辑器', '⬈'], ['导出成片', '⬇']],
 };
 const MORE_CAPS = ['局部重绘', '扩图', '背景替换', '风格化', '去水印'];
@@ -619,6 +618,9 @@ async function startGen(n, taskLabel, opts = {}) {
 const CAP_PROMPTS = {
   '全景': '超广角全景视角，场景完整宏大',
   '多角度': '同一主体的不同机位角度，视角明显变化',
+  '画面切分': '将画面切分为多格分镜构图，节奏分段呈现',
+  '视频增强': '视频增强：超高清画质、降噪、细节锐利、稳定流畅',
+  '去字幕': '去除画面中的字幕与文字水印，画面干净完整',
   '打光': '电影感打光，暖调主光加轮廓光',
   '消除笔': '画面干净无杂物',
   '图片超清': '超高清画质，细节锐利，8K 质感',
@@ -647,15 +649,35 @@ const CAP_PROMPTS = {
 };
 function capApply(name) {
   const n = nodes.find(x => x.id === selected); if (!n) return;
-  if ((name === '拆解分镜' || name === '九宫格') && n.type === 'image') { addNineChild(n); return; }
+  if ((name === '九宫格' || name === '拆解分镜') && n.type === 'image') { addNineChild(n); return; }
   if (name === '合成视频' || name === '整组入片') { capCompose(); return; }
   if (name === '进编辑器') { switchMode('editor'); return; }
   if (name === '导出成片') { exportFilm(); return; }
-  if (name === '切换技能') { setTab('image'); openPanel(); toast('🎛 在下方技能条选择技能：切换即按新技能重新生成分镜'); return; }
+  if (name === '切换技能') { setTab('image'); openPanel(); toast('🎛 在下方技能条选择技能：切换即按新技能重新生成九宫格'); return; }
   if (name === '提升全部') { promoteAll(n.id); return; }
+  if (name === '截取帧') { extractFrame(n); return; }
+  if (name === '音频分离') { splitAudio(n); return; }
   if (n.status === 'running') { toast('⏳ 当前节点正在生成中…'); return; }
-  const variety = ['全景', '打光', '消除笔', '图片超清', '风格迁移', '局部重绘', '扩图', '背景替换', '风格化', '去水印'].includes(name);
+  const variety = ['全景', '打光', '消除笔', '图片超清', '风格迁移', '局部重绘', '扩图', '背景替换', '风格化', '去水印', '视频增强', '去字幕', '多角度'].includes(name);
   startGen(n, name, { newSeed: variety, instr: CAP_PROMPTS[name] });
+}
+/* 视频截取帧：从视频节点取当前画面生成图片子节点 */
+function extractFrame(v) {
+  if (!v || v.type !== 'video') return;
+  pushUndo();
+  const f = { id: uid(), type: 'image', x: v.x + 460, y: v.y - 20, status: 'done', progress: 100, prompt: '截取帧：' + (v.prompt || ''), url: v.url || sceneURL(v.vseed || 0), vseed: v.vseed };
+  nodes.push(f); addEdge(v.id, f.id, { silent: true });
+  selected = f.id; render(); openPanel(); save();
+  toast('🎞 已截取帧为图片节点，可继续用图片能力处理');
+}
+/* 视频音频分离：生成音频子节点（当前为波形占位，视频能力接入后自动生效） */
+function splitAudio(v) {
+  if (!v || v.type !== 'video') return;
+  pushUndo();
+  const a = { id: uid(), type: 'audio', x: v.x + 460, y: v.y + 220, status: 'done', progress: 100, prompt: '音频分离：' + (v.prompt || '视频原声'), url: waveURL(), dur: v.dur || '—' };
+  nodes.push(a); addEdge(v.id, a.id, { silent: true });
+  selected = a.id; render(); openPanel(); save();
+  toast('🎙 已分离音频节点（当前为占位波形）');
 }
 function moreApply(name) { $('moreMenu').style.display = 'none'; capApply(name); }
 function addNineChild(src) {
@@ -676,7 +698,7 @@ function capCompose() {
   if (n) addEdge(n.id, m.id, { silent: true });
   selected = m.id; render(); hideFloaters(); save(); toast('⬈ 已创建成片节点，点击「进编辑器」开始剪辑');
 }
-/* ============ 分镜 → 镜头：把分镜的一格晋升为独立镜头节点（结构→素材的通道） ============ */
+/* ============ 九宫格 → 图片：把一格晋升为独立图片节点（能力产物的再加工通道） ============ */
 function promoteCell(nineId, idx) {
   const nine = nodes.find(x => x.id === nineId);
   if (!nine || nine.type !== 'nine') return;
@@ -693,7 +715,7 @@ function promoteCell(nineId, idx) {
   else shot.vseed = ((nine.vseed || 0) + idx * 3) % 97;
   nodes.push(shot); addEdge(nine.id, shot.id, { silent: true });
   selected = shot.id; render(); openPanel(); save();
-  toast('⬆ 第 ' + (idx + 1) + ' 格已提升为镜头节点' + (shot.url ? '（沿用分镜画面）' : '，可生成出图'));
+  toast('⬆ 第 ' + (idx + 1) + ' 格已提升为图片节点' + (shot.url ? '（沿用分镜画面）' : '，可生成出图'));
 }
 function promoteAll(nineId) {
   const nine = nodes.find(x => x.id === nineId);
@@ -713,7 +735,7 @@ function promoteAll(nineId) {
     nodes.push(shot); addEdge(nine.id, shot.id, { silent: true }); made++;
   }
   render(); save();
-  toast('⬆ 已提升 ' + made + ' 格为镜头节点，逐格生成或直接入片');
+  toast('⬆ 已提升 ' + made + ' 格为图片节点，可逐格生成或 ⚡ 合成视频');
 }
 function composeAll() {
   capCompose();
@@ -887,26 +909,14 @@ $('gSend').addEventListener('click', () => {
   save();
 });
 
-/* ============ 素材库（按角色分组：素材 / 结构 / 组装） ============ */
+/* ============ 素材库：四种内容类型（九宫格 / 合成视频由能力生成，不在库中） ============ */
 const lib = $('lib');
-const LIB_GROUPS = [
-  ['素材 · 进成片', ['text', 'image', 'audio', 'video']],
-  ['结构 · 探索产线', ['nine']],
-  ['组装 · 成片出口', ['edit']],
-];
-LIB_GROUPS.forEach(([title, keys]) => {
-  const h = document.createElement('div');
-  h.className = 'lib-group';
-  h.textContent = title;
-  lib.appendChild(h);
-  keys.forEach(k => {
-    const t = TYPES[k];
-    const d = document.createElement('div');
-    d.className = 'lib-item'; d.draggable = true;
-    d.innerHTML = `<div class="lib-ico" style="background:${t.color}22;color:${t.color}">${t.icon}</div>${t.label}`;
-    d.addEventListener('dragstart', ev => ev.dataTransfer.setData('type', k));
-    lib.appendChild(d);
-  });
+Object.entries(TYPES).filter(([k]) => !['nine', 'edit'].includes(k)).forEach(([k, t]) => {
+  const d = document.createElement('div');
+  d.className = 'lib-item'; d.draggable = true;
+  d.innerHTML = `<div class="lib-ico" style="background:${t.color}22;color:${t.color}">${t.icon}</div>${t.label}${k === 'video' ? '<span style="font-size:10px;color:var(--text-dim);margin-left:4px">模拟</span>' : ''}`;
+  d.addEventListener('dragstart', ev => ev.dataTransfer.setData('type', k));
+  lib.appendChild(d);
 });
 wrap.addEventListener('dragover', e => e.preventDefault());
 /* 图例折叠 */
@@ -1085,14 +1095,14 @@ function toast(msg) {
   clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
 }
 
-/* ============ 自动布局（按流水线角色分列：文案 → 分镜 → 镜头/视频 → 音频 → 成片） ============ */
+/* ============ 自动布局（按创作流分列：文案 → 九宫格 → 图片/视频 → 音频 → 合成视频） ============ */
 function autoLayout() {
   pushUndo();
   const colOrder = { text: 0, nine: 1, image: 2, video: 2, audio: 3, edit: 4 };
   const cols = {};
   nodes.forEach(n => { const c = colOrder[n.type] ?? 9; (cols[c] = cols[c] || []).push(n); });
   Object.values(cols).forEach(col => col.forEach((n, i) => { n.x = 140 + colOrder[n.type] * 560; n.y = 120 + i * 300; }));
-  render(); resetView(); save(); toast('⌗ 已按流水线布局：文案 → 分镜 → 镜头 → 成片');
+  render(); resetView(); save(); toast('⌗ 已按创作流布局：文案 → 图片/视频 → 合成视频');
 }
 
 /* ============ 快照 / 撤销重做 / 持久化（服务端 + localStorage 兜底） ============ */

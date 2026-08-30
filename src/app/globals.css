@@ -49,23 +49,13 @@
 
   /* ===== 节点 ===== */
   .node{position:absolute;user-select:none;cursor:move}
-  /* 角色标签：素材 / 结构 / 组装 */
-  .role-tag{font-size:9px;padding:1px 6px;border-radius:6px;margin-left:6px;vertical-align:1px;font-weight:400;letter-spacing:1px}
-  .role-asset{background:#3ecf8e1f;color:#3ecf8e}
-  .role-struct{background:#f5a6231f;color:#f5a623}
-  .role-group{background:#f5576c1f;color:#f5576c}
-  /* 分镜（结构）虚线描边，成片（组装）加粗红描边 —— 与素材实线区分 */
-  .node.t-nine .node-card{border-style:dashed;border-color:#f5a62355}
-  .node.t-nine.selected .node-card{border-color:#f5a623}
-  .node.t-edit .node-card{border-width:2px;border-color:#f5576c55}
-  .node.t-edit.selected .node-card{border-color:#f5576c}
-  /* 分镜格子提升按钮 */
+  /* 九宫格格子提升按钮 */
   .nine-cell{position:relative;display:block}
   .cell-promote{position:absolute;right:4px;bottom:4px;width:22px;height:22px;border-radius:7px;border:1px solid rgba(255,255,255,.25);
     background:rgba(10,14,24,.72);color:#f5a623;font-size:12px;line-height:1;cursor:pointer;opacity:0;transition:.15s;z-index:3}
   .nine-cell:hover .cell-promote{opacity:1}
   .cell-promote:hover{background:#f5a623;color:#0e1220;border-color:#f5a623}
-  /* 成片节点：汇集清单 + 进编辑器 */
+  /* 合成视频节点：汇集清单 + 进编辑器 */
   .ed-stats{padding:0 14px 8px;font-size:11px;color:var(--text-dim)}
   .ed-open{display:block;width:calc(100% - 28px);margin:0 14px 12px;padding:9px 0;border:none;border-radius:9px;cursor:pointer;
     background:linear-gradient(135deg,#f5576c,#f5a623);color:#fff;font-size:13px;font-weight:600;transition:.15s}
@@ -192,7 +182,6 @@
   .lib-item{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:10px;cursor:grab;font-size:13px;transition:.15s;border:1px dashed transparent}
   .lib-item:hover{background:var(--card-hover);border-color:var(--border)}
   .lib-ico{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
-  .lib-group{font-size:10px;color:var(--text-dim);letter-spacing:1px;padding:10px 6px 2px;opacity:.75}
   .tpls{flex:1;overflow-y:auto;padding:0 10px 10px;display:flex;flex-direction:column;gap:8px}
   .tpl-loading{font-size:11px;color:var(--text-dim);padding:6px 4px}
   .tpl{border:1px solid var(--border);border-radius:10px;padding:9px 10px;cursor:pointer;transition:.15s;background:rgba(255,255,255,.02)}
