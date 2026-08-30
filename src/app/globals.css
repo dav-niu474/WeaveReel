@@ -48,7 +48,7 @@
   .wire-mid:hover circle{stroke:var(--accent-2)}
 
   /* ===== 节点 ===== */
-  .node{position:absolute;user-select:none;cursor:move}
+  .node{position:absolute;user-select:none;cursor:move;z-index:1}
   /* 九宫格格子提升按钮 */
   .nine-cell{position:relative;display:block}
   .cell-promote{position:absolute;right:4px;bottom:4px;width:22px;height:22px;border-radius:7px;border:1px solid rgba(255,255,255,.25);
@@ -60,6 +60,19 @@
   .ed-open{display:block;width:calc(100% - 28px);margin:0 14px 12px;padding:9px 0;border:none;border-radius:9px;cursor:pointer;
     background:linear-gradient(135deg,#f5576c,#f5a623);color:#fff;font-size:13px;font-weight:600;transition:.15s}
   .ed-open:hover{filter:brightness(1.12)}
+
+  /* ===== 节点分组（绑定）：包围盒 + 组名，整体拖动 ===== */
+  .group-box{position:absolute;border:1px dashed rgba(139,123,255,.35);border-radius:16px;background:rgba(139,123,255,.05);
+    pointer-events:none;z-index:0;transition:border-color .15s}
+  .group-box:hover{border-color:rgba(139,123,255,.6)}
+  .group-title{position:absolute;top:10px;left:14px;right:14px;display:flex;align-items:center;gap:8px;pointer-events:auto;cursor:grab;
+    font-size:12px;font-weight:600;color:#b9aefc;background:rgba(30,26,58,.85);border:1px solid rgba(139,123,255,.3);
+    border-radius:9px;padding:5px 10px;width:fit-content;max-width:90%;user-select:none}
+  .group-title:active{cursor:grabbing}
+  .group-title .group-ops{display:flex;gap:4px;margin-left:6px}
+  .group-title .group-ops button{border:none;background:transparent;color:var(--text-dim);cursor:pointer;font-size:11px;padding:1px 4px;border-radius:5px}
+  .group-title .group-ops button:hover{color:#fff;background:rgba(139,123,255,.3)}
+  .node.multi .node-card{border-color:#8b7bff;box-shadow:0 0 0 2px rgba(139,123,255,.35)}
   .node-label{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-dim);margin:0 0 6px 4px}
   .node-label svg{width:14px;height:14px}
   .node-card{position:relative;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);

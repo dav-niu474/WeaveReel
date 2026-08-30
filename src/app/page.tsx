@@ -52,6 +52,7 @@ export default function Home() {
                 <div className="aitb-sep"></div>
                 <button className="aitb-btn hl" onClick={call("capCompose")}><span className="ico">⚡</span>合成视频</button>
                 <button className="aitb-btn hl" title="从所选节点沿连线向下游逐级生成（上游输出作为下游输入）" onClick={call("runChain")}><span className="ico">⏩</span>链式生成</button>
+                <button className="aitb-btn" title="绑定为一组：多选（Shift+点击）直接成组；单选则连同上游整链成组，可整体拖动" onClick={call("bindGroup")}><span className="ico">📦</span>绑组</button>
                 <button className="aitb-btn" title="复制所选节点" onClick={call("dupSelected")}><span className="ico">⧉</span></button>
                 <button className="aitb-btn" title="上传替换所选节点素材" onClick={call("replaceSelected")}><span className="ico">🔄</span>替换</button>
                 <button className="aitb-btn" title="删除所选节点 (Delete)" onClick={call("deleteSelected")}><span className="ico">🗑</span></button>
@@ -103,7 +104,7 @@ export default function Home() {
                 <div className="items" id="lib"></div>
                 <h3 style={{ marginTop: "14px" }}>场景模板 <span style={{ fontSize: "11px", fontWeight: 400, opacity: 0.6 }}>点击一键套用</span></h3>
                 <div className="tpls" id="tplLib"><div className="tpl-loading">模板加载中…</div></div>
-                <div className="hint">拖入节点 / 拖入图片文件上传<br />文件拖到节点上 = 替换素材<br />Ctrl+V 粘贴截图直接上传<br />选中节点 → 工具条能力 / 🔄 / 🗑<br />连线两侧自动传递内容：<br />上游文案/图片 → 下游生成参考<br />⚠ 上游变化 → 点击「同步」更新<br />⏩ 链式生成：沿连线逐级生成<br />拖动端口 / 连线 ⊕ 建立连接<br />拖线到空白 → 快速创建节点<br />双击图片 → 大图预览 / 下载<br />Ctrl+Z 撤销 · Ctrl+D 复制<br />右键画布 → 快速创建</div>
+                <div className="hint">拖入节点 / 拖入图片文件上传<br />文件拖到节点上 = 替换素材<br />Ctrl+V 粘贴截图直接上传<br />选中节点 → 工具条能力 / 🔄 / 🗑<br />📦 绑组：Shift+点击多选，或单选连带上游成组<br />连线两侧自动传递内容：<br />上游文案/图片 → 下游生成参考<br />⚠ 上游变化 → 点击「同步」更新<br />⏩ 链式生成：沿连线逐级生成<br />拖动端口 / 连线 ⊕ 建立连接<br />拖线到空白 → 快速创建节点<br />双击图片 → 大图预览 / 下载<br />Ctrl+Z 撤销 · Ctrl+D 复制<br />右键画布 → 快速创建</div>
             </div>
 
             {/* 缩放栏 */}
@@ -127,6 +128,7 @@ export default function Home() {
                 <button onClick={call("ctxAction", "chain")}>⏩ 从此节点链式生成</button>
                 <button onClick={call("ctxAction", "prompt")}>📋 查看生成提示词</button>
                 <button onClick={call("ctxAction", "dup")}>⧉ 复制节点</button>
+                <button onClick={call("ctxAction", "bind")}>📦 与上游绑定为组</button>
                 <button onClick={call("ctxAction", "replace")}>🔄 替换素材</button>
                 <button className="danger" onClick={call("ctxAction", "del")}>🗑 删除节点</button>
             </div>

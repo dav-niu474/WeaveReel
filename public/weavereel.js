@@ -146,6 +146,8 @@ const TYPES = {
 };
 let nodes = [];
 let edges = [];
+/* 节点分组（绑定）：如「主体图 → 特效参考图 → 视频」绑成一个镜头组，整组框住、整组拖动 */
+let groups = [];
 
 /* ============ 连线语义：四种线各有含义，非法连线直接拒绝 ============
    viz 可视化(蓝)：文案→图片/视频，把文字画出来
@@ -236,7 +238,7 @@ function statusChip(n) {
 function renderNode(n) {
   const t = TYPES[n.type];
   const el = document.createElement('div');
-  el.className = `node t-${n.type}` + (selected === n.id ? ' selected' : '');
+  el.className = `node t-${n.type}` + (selected === n.id ? ' selected' : '') + (multiSel.includes(n.id) ? ' multi' : '');
   el.style.left = n.x + 'px'; el.style.top = n.y + 'px'; el.dataset.id = n.id;
   const media = mediaHTML(n);
   const runMask = (n.status === 'running') ? `<div class="genmask"><div class="spin"></div><span>${n.task || '生成中'} ${Math.round(n.progress || 0)}%</span></div>` : '';
@@ -273,9 +275,93 @@ function renderNode(n) {
 function render() {
   vp.querySelectorAll('.node').forEach(e => e.remove());
   nodes.forEach(n => vp.appendChild(renderNode(n)));
+  renderGroups();
   drawWires();
   applyView();
   const eh = $('emptyHint'); if (eh) eh.style.display = nodes.length ? 'none' : 'flex';
+}
+
+/* ============ 节点分组（绑定）：包围盒容器 + 组名 + 整组拖动 ============ */
+let multiSel = [];   // Shift+点击 多选，用于绑组
+function groupBoxRect(g) {
+  const members = g.ids.map(id => nodes.find(n => n.id === id)).filter(Boolean);
+  if (members.length < 2) return null;   // 组内节点被删光后不再渲染
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  members.forEach(n => {
+    const el = nodeEl(n.id);
+    const w = el ? el.offsetWidth : 380, h = el ? el.offsetHeight : 240;
+    x0 = Math.min(x0, n.x); y0 = Math.min(y0, n.y);
+    x1 = Math.max(x1, n.x + w); y1 = Math.max(y1, n.y + h);
+  });
+  return { x: x0 - 26, y: y0 - 58, w: x1 - x0 + 52, h: y1 - y0 + 86 };
+}
+function renderGroups() {
+  vp.querySelectorAll('.group-box').forEach(e => e.remove());
+  groups.forEach(g => {
+    const r = groupBoxRect(g); if (!r) return;
+    const d = document.createElement('div');
+    d.className = 'group-box'; d.dataset.gid = g.id;
+    d.style.left = r.x + 'px'; d.style.top = r.y + 'px'; d.style.width = r.w + 'px'; d.style.height = r.h + 'px';
+    d.innerHTML = `<div class="group-title" data-gtitle="${g.id}"><span class="gt-name">📦 ${esc(g.name)}</span><span class="group-ops">` +
+      `<button data-grename="${g.id}" title="重命名">✎</button><button data-gungroup="${g.id}" title="解散分组">✕</button></span></div>`;
+    vp.insertBefore(d, vp.firstChild);
+  });
+}
+/* 节点拖动 / 整组拖动时只刷新几何位置，不重建 DOM */
+function updateGroupGeom() {
+  groups.forEach(g => {
+    const el = vp.querySelector(`.group-box[data-gid="${g.id}"]`);
+    const r = groupBoxRect(g);
+    if (el && r) { el.style.left = r.x + 'px'; el.style.top = r.y + 'px'; el.style.width = r.w + 'px'; el.style.height = r.h + 'px'; }
+  });
+}
+/* 绑定：多选（≥2）直接成组；单选则连同全部上游闭包一起成组（如 主体图→参考图→视频） */
+function bindGroup() {
+  let ids;
+  if (multiSel.length >= 2) ids = [...multiSel];
+  else {
+    if (!selected) { toast('请选择节点后绑定（Shift+点击可多选）'); return; }
+    const set = new Set([selected]);
+    let frontier = [selected];
+    while (frontier.length) {
+      const nxt = [];
+      frontier.forEach(id => directUpstreams(id).forEach(u => { if (!set.has(u.id)) { set.add(u.id); nxt.push(u.id); } }));
+      frontier = nxt;
+    }
+    ids = [...set];
+  }
+  if (ids.length < 2) { toast('至少两个节点才能绑定成组（试试先连出一条链）'); return; }
+  const first = nodes.find(n => n.id === ids[0]);
+  const defName = (first && (first.prompt || first.title) || '未命名镜头').slice(0, 18);
+  const name = prompt('给这组镜头起个名字：', defName) || defName;
+  pushUndo();
+  groups.push({ id: 'g' + Date.now().toString(36), name, ids });
+  multiSel = []; selected = null;
+  render(); hideFloaters(); save();
+  toast('📦 已绑定 ' + ids.length + ' 个节点为「' + name + '」，拖组名可整体移动');
+}
+function ungroup(gid) {
+  pushUndo();
+  groups = groups.filter(g => g.id !== gid);
+  render(); save(); toast('🔓 已解散分组（节点与连线保留）');
+}
+function renameGroup(gid) {
+  const g = groups.find(x => x.id === gid); if (!g) return;
+  const name = prompt('重命名分组：', g.name);
+  if (name == null) return;
+  pushUndo();
+  g.name = name.trim() || g.name;
+  render(); save();
+}
+/* 整组拖动：按住组名拖动全部成员 */
+let groupDrag = null;
+function groupDragStart(e, gid) {
+  if (e.target.closest('.group-ops')) return;
+  e.stopPropagation(); e.preventDefault();
+  const g = groups.find(x => x.id === gid); if (!g) return;
+  const r = wrap.getBoundingClientRect();
+  const wx = (e.clientX - r.left - panX) / scale, wy = (e.clientY - r.top - panY) / scale;
+  groupDrag = { g, wx0: wx, wy0: wy, orig: g.ids.map(id => nodes.find(n => n.id === id)).filter(Boolean).map(n => ({ n, x: n.x, y: n.y })), pre: serialize(), moved: false };
 }
 function applyView() {
   vp.style.transform = `translate(${panX}px,${panY}px) scale(${scale})`;
@@ -392,6 +478,23 @@ vp.addEventListener('mousedown', e => {
   // 成片节点「⬈ 进编辑器」
   const edBtn = e.target.closest('.ed-open');
   if (edBtn) { e.stopPropagation(); e.preventDefault(); switchMode('editor'); return; }
+  // 分组操作：重命名 / 解散 / 按住组名整组拖动
+  const gUngroup = e.target.closest('[data-gungroup]');
+  if (gUngroup) { e.stopPropagation(); e.preventDefault(); ungroup(gUngroup.dataset.gungroup); return; }
+  const gRename = e.target.closest('[data-grename]');
+  if (gRename) { e.stopPropagation(); e.preventDefault(); renameGroup(gRename.dataset.grename); return; }
+  const gTitle = e.target.closest('[data-gtitle]');
+  if (gTitle) { groupDragStart(e, gTitle.dataset.gtitle); return; }
+  // Shift+点击 多选节点（用于绑组）
+  const nel0 = e.target.closest('.node');
+  if (nel0 && e.shiftKey) {
+    const id = nel0.dataset.id;
+    const i = multiSel.indexOf(id);
+    if (i >= 0) multiSel.splice(i, 1); else multiSel.push(id);
+    selected = null; hideFloaters(); render();
+    if (multiSel.length >= 2) toast('已选 ' + multiSel.length + ' 个节点，点工具条 📦 绑定为组');
+    e.stopPropagation(); e.preventDefault(); return;
+  }
   const port = e.target.closest('.port');
   if (port) { linking = { from: port.dataset.node, dir: port.dataset.dir }; wrap.classList.add('connecting'); e.stopPropagation(); e.preventDefault(); return; }
   const nel = e.target.closest('.node');
@@ -400,11 +503,24 @@ vp.addEventListener('mousedown', e => {
     const r = wrap.getBoundingClientRect();
     dragPre = serialize(); dragMoved = false;
     dragging = { n, dx: (e.clientX - r.left - panX) / scale - n.x, dy: (e.clientY - r.top - panY) / scale - n.y };
-    if (selected !== n.id) { selected = n.id; selectedEdge = null; render(); openPanel(); }
+    if (selected !== n.id || multiSel.length) { selected = n.id; multiSel = []; selectedEdge = null; render(); openPanel(); }
     e.stopPropagation();
   }
 });
 window.addEventListener('mousemove', e => {
+  if (groupDrag) {
+    const r = wrap.getBoundingClientRect();
+    const wx = (e.clientX - r.left - panX) / scale, wy = (e.clientY - r.top - panY) / scale;
+    const dx = wx - groupDrag.wx0, dy = wy - groupDrag.wy0;
+    if (Math.abs(dx) + Math.abs(dy) > 2) groupDrag.moved = true;
+    groupDrag.orig.forEach(o => {
+      o.n.x = Math.round(o.x + dx); o.n.y = Math.round(o.y + dy);
+      const el = nodeEl(o.n.id);
+      if (el) { el.style.left = o.n.x + 'px'; el.style.top = o.n.y + 'px'; }
+    });
+    updateGroupGeom(); drawWires(); positionFloaters();
+    return;
+  }
   if (panning) { panX = e.clientX - px0; panY = e.clientY - py0; applyView(); return; }
   if (dragging) {
     dragMoved = true;
@@ -424,7 +540,7 @@ window.addEventListener('mousemove', e => {
     showGuides(gx, gy);
     const el = nodeEl(dragging.n.id);
     el.style.left = dragging.n.x + 'px'; el.style.top = dragging.n.y + 'px';
-    drawWires(); positionFloaters();
+    drawWires(); updateGroupGeom(); positionFloaters();
   }
   if (linking) {
     const r = wrap.getBoundingClientRect();
@@ -435,6 +551,10 @@ window.addEventListener('mousemove', e => {
 });
 window.addEventListener('mouseup', e => {
   hideGuides();
+  if (groupDrag) {
+    if (groupDrag.moved) { undoStack.push(groupDrag.pre); redoStack.length = 0; save(); }
+    groupDrag = null;
+  }
   if (dragging && dragMoved) { undoStack.push(dragPre); redoStack.length = 0; save(); }
   dragging = null;
   if (linking) {
@@ -958,6 +1078,7 @@ function applyTemplate(tpl) {
     if (['image', 'nine', 'video'].includes(fresh.type)) fresh.vseed = Math.floor(Math.random() * 97);
     return fresh;
   });
+  groups = [{ id: 'g' + Date.now().toString(36), name: tpl.name, ids: nodes.map(n => n.id) }];   // 模板整张绑为一组
   edges = tpl.edges.map(e => ({ from: idMap[e.from], to: idMap[e.to] })).filter(e => { const ok = !!EDGE_OK[nodes.find(n => n.id === e.from)?.type]?.[nodes.find(n => n.id === e.to)?.type]; if (!ok) console.warn('模板连线不合法已忽略', e); return ok; });
   selected = null; selectedEdge = null;
   render(); hideFloaters(); save();
@@ -1023,6 +1144,7 @@ function ctxAction(a) {
   if (a === 'del') { selected = ctxNode; selectedEdge = null; deleteSelected(); }
   if (a === 'replace') pickFileForReplace(ctxNode);
   if (a === 'chain') { selected = ctxNode; selectedEdge = null; render(); openPanel(); runChain(); }
+  if (a === 'bind') { selected = ctxNode; selectedEdge = null; render(); bindGroup(); return; }
   if (a === 'prompt') { const n = nodes.find(x => x.id === ctxNode); if (n) showPromptModal(n); }
   if (a === 'dup') {
     pushUndo(); const n = nodes.find(x => x.id === ctxNode);
@@ -1109,10 +1231,10 @@ function autoLayout() {
 const LS_KEY = 'seko_canvas_v2';
 let undoStack = [], redoStack = [], saveTimer = null, _uid = 1;
 const uid = () => 'n' + Date.now().toString(36) + (_uid++);
-const serialize = () => JSON.stringify({ nodes, edges });
+const serialize = () => JSON.stringify({ nodes, edges, groups });
 function pushUndo() { undoStack.push(serialize()); if (undoStack.length > 60) undoStack.shift(); redoStack.length = 0; }
 function restoreSnapshot(s) {
-  const d = JSON.parse(s); nodes = d.nodes; edges = d.edges;
+  const d = JSON.parse(s); nodes = d.nodes; edges = d.edges; groups = d.groups || [];
   selected = null; selectedEdge = null; render(); hideFloaters(); save();
 }
 function undo() { if (!undoStack.length) { toast('没有可撤销的操作'); return; } redoStack.push(serialize()); restoreSnapshot(undoStack.pop()); toast('↩ 已撤销'); }
@@ -1120,7 +1242,7 @@ function redo() { if (!redoStack.length) { toast('没有可重做的操作'); re
 function save() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
-    const payload = { nodes, edges, view: { scale, panX, panY } };
+    const payload = { nodes, edges, groups, view: { scale, panX, panY } };
     try { localStorage.setItem(LS_KEY, JSON.stringify(payload)); } catch (_) {}
     api.putProject(payload).catch(() => { /* 服务端不可达时静默，本地已有兜底 */ });
   }, 300);
@@ -1129,7 +1251,7 @@ async function loadProject() {
   try {
     const d = await api.getProject();
     if (d && Array.isArray(d.nodes) && d.nodes.length) {
-      nodes = d.nodes; edges = d.edges || [];
+      nodes = d.nodes; edges = d.edges || []; groups = d.groups || [];
       // 恢复时把进行中的任务视为已完成（结果已在节点上）
       nodes.forEach(n => { if (n.status === 'running') { n.status = 'done'; n.progress = 100; } });
       if (d.view && d.view.scale) { scale = d.view.scale; panX = d.view.panX || 0; panY = d.view.panY || 0; }
@@ -1141,6 +1263,7 @@ async function loadProject() {
 }
 function newCanvas() {
   pushUndo();
+  groups = [];
   nodes = [{ id: uid(), type: 'image', x: 240, y: 220, status: 'idle', prompt: '双击或点击下方输入框，描述这个节点…', vseed: Math.floor(Math.random() * 97) }];
   edges = []; selected = null; render(); hideFloaters(); save(); setTimeout(resetView, 30); toast('✚ 已新建画布');
 }
