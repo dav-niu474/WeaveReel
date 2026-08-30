@@ -1,7 +1,7 @@
 /* 织影 WeaveReel — 生成任务：D1 落库 + waitUntil 异步执行 + 按耗时推进度 */
 import { eq } from "drizzle-orm";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
-import { tasks, settings } from "@/db/schema";
+import { tasks, settings, works } from "@/db/schema";
 import { getDb } from "@/db";
 import { callSNImage, callSNText, describeRefImage, getProvider, type TaskContext } from "./sensenova";
 import { sizeFromRatio } from "./svg";
@@ -99,7 +99,7 @@ export async function runTask(taskId: string, opts: { model?: string; ratio?: st
     const provider = await getProvider(env, settingsRows[0]?.data ?? null);
     const ctx = normContext(JSON.parse(t.contextJson || "{}"));
     try {
-        if (!provider || !["text", "image", "nine"].includes(t.type)) {
+        if (!provider || !["text", "image", "nine", "video"].includes(t.type)) {
             // 模拟兜底：带参考图时演示引用效果（合成片拼胶片条 / 直接沿用素材）
             const refs = ctx.images.flatMap((i) => i.urls).filter(Boolean);
             let results: string[] | null = null;
@@ -145,9 +145,12 @@ export async function runTask(taskId: string, opts: { model?: string; ratio?: st
             const text = await callSNText(userContent, opts.model || provider.textModel, provider);
             await db.update(tasks).set({ status: "done", textResult: text, refMode, promptUsed: userContent }).where(eq(tasks.id, taskId));
         } else {
-            const n = Math.max(1, Math.min(9, t.count || 1));
+            let n = Math.max(1, Math.min(9, t.count || 1));
             const size = sizeFromRatio(opts.ratio);
-            const basePrompt = (t.prompt || "海边黄昏电影感画面") + (ctxBlock ? "，" + ctxBlock : "");
+            /* 视频节点：以图片模型生成「视频首帧」，导出成片时以 Ken-Burns 动效呈现 */
+            if (t.type === "video") n = 1;
+            let basePrompt = (t.prompt || "海边黄昏电影感画面") + (ctxBlock ? "，" + ctxBlock : "");
+            if (t.type === "video") basePrompt = (t.prompt || "电影感画面") + "，视频首帧画面，电影感构图，宽幅高质感" + (ctxBlock ? "，" + ctxBlock : "");
             /* 九宫格按技能出分镜：每种技能有自己的九拍节拍（灵感风暴/故事叙述/武打分镜/全景机位/舞蹈动作），
                上游文案句子融合进节拍；其余图片类型维持原变体逻辑 */
             const shots = t.type === "nine" ? gridShots(t.gridMode, ctxTexts, n) : [];
@@ -172,6 +175,16 @@ export async function runTask(taskId: string, opts: { model?: string; ratio?: st
                 cellPromptsJson: shots.length ? JSON.stringify(cellPrompts) : null,
                 shotsJson: shots.length ? JSON.stringify(shots) : null,
             }).where(eq(tasks.id, taskId));
+            // 登记进作品库（历史生成不随画布节点删除而消失）
+            if (urls.length) {
+                await db.insert(works).values(urls.map((u, i) => ({
+                    id: "w" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+                    url: u,
+                    prompt: (cellPrompts[i] || t.prompt || "").slice(0, 500),
+                    kind: t.type === "video" ? "video" : "image",
+                    createdAt: Date.now() + i,
+                })));
+            }
         }
     } catch (err) {
         await db.update(tasks).set({ status: "error", error: String((err as Error).message || err) }).where(eq(tasks.id, taskId));

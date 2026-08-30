@@ -50,6 +50,21 @@ const api = {
     if (!r.ok) throw new Error('GET /api/templates ' + r.status);
     return r.json();
   },
+  async getAssets() {
+    const r = await fetch('/api/assets');
+    if (!r.ok) throw new Error('GET /api/assets ' + r.status);
+    return r.json();
+  },
+  async getWorks(publishedOnly) {
+    const r = await fetch('/api/works' + (publishedOnly ? '?published=1' : ''));
+    if (!r.ok) throw new Error('GET /api/works ' + r.status);
+    return r.json();
+  },
+  async publishWorks(ids, publish) {
+    const r = await fetch('/api/works', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: publish ? 'publish' : 'unpublish', ids }) });
+    if (!r.ok) throw new Error('POST /api/works ' + r.status);
+    return r.json();
+  },
 };
 const sceneURL = (seed) => '/api/scene/' + (Math.abs(seed) % 97);
 const waveURL = () => '/api/wave';
@@ -156,22 +171,6 @@ const EDGE_OK = {
   audio: { edit: 1 },
   edit : {},
 };
-function edgeType(from, to) {
-  const f = nodes.find(n => n.id === from), t = nodes.find(n => n.id === to);
-  if (!f || !t) return 'ref';
-  if (t.type === 'edit') return 'into';
-  if (f.type === 'nine' && t.type === 'image') return 'promote';
-  if (t.type === 'nine') return 'split';
-  if (f.type === 'text' && (t.type === 'image' || t.type === 'video')) return 'viz';
-  return 'ref';
-}
-const EDGE_META = {
-  viz:     { color: '#4f8cff', glyph: '✎→', name: '可视化' },
-  ref:     { color: '#3ecf8e', glyph: '⇢',  name: '参考' },
-  split:   { color: '#f5a623', glyph: '▦',  name: '拆解' },
-  promote: { color: '#f5a623', glyph: '⬆',  name: '提升' },
-  into:    { color: '#f5576c', glyph: '⬈',  name: '入片' },
-};
 /** 唯一建线入口：合法性校验 + 去重 + 提示 */
 function addEdge(fromId, toId, opts = {}) {
   const f = nodes.find(n => n.id === fromId), t = nodes.find(n => n.id === toId);
@@ -252,10 +251,12 @@ function renderNode(n) {
     <div class="node-label"><span style="color:${t.color}">${t.icon}</span>${n.label || t.label}</div>
     <div class="node-card"${cardW}>
       ${body || promptRow}${(n.type === 'text') ? promptRow : ''}${refRow}${editFoot}
+      ${(n.type === 'image' || n.type === 'video' || n.type === 'edit') ? `<button class="qreplace" data-qr="${n.id}" title="替换素材">🔄</button>` : ''}
       <button class="ndel" data-del="${n.id}" title="删除节点 (Delete)">✕</button>
       <div class="port in"  data-node="${n.id}" data-dir="in"  title="输入">＋</div>
       <div class="port out" data-node="${n.id}" data-dir="out" title="输出">＋</div>
-    </div>`;
+    </div>
+    ${n.type !== 'edit' ? `<button class="qcreate" data-qc="${n.id}" title="创建下游节点（自动连线）">＋</button>` : ''}`;
   return el;
 }
 function render() {
@@ -372,21 +373,14 @@ function drawWires(temp) {
     if (!nodeEl(e.from) || !nodeEl(e.to)) return;
     const a = portPos(e.from, 'out'), b = portPos(e.to, 'in');
     const sel = selectedEdge && selectedEdge.from === e.from && selectedEdge.to === e.to;
-    const fn = nodes.find(x => x.id === e.from), tn = nodes.find(x => x.id === e.to);
-    /* 连线语义着色：可视化蓝 / 参考绿 / 拆解·提升橙 / 入片红；有内容流动时加亮 */
-    const et = EDGE_META[edgeType(e.from, e.to)];
+    const fn = nodes.find(x => x.id === e.from);
+    /* 连线统一样式：上游有产出 → 点亮，表示这条线有内容在流动 */
     const fed = fn && hasContent(fn) ? ' fed' : '';
-    const style = `stroke="${et.color}"${fed ? '' : ' opacity="0.45"'}`;
-    html += `<path class="wire${sel ? ' selected' : ''}${fed}" d="${wirePath(a, b)}" data-edge="${e.from}-${e.to}" ${style}/>`;
+    html += `<path class="wire${sel ? ' selected' : ''}${fed}" d="${wirePath(a, b)}" data-edge="${e.from}-${e.to}"/>`;
     const m = wireMid(a, b);
     html += `<g class="wire-mid" data-edge="${e.from}-${e.to}">
-      <circle cx="${m.x}" cy="${m.y}" r="9" fill="${et.color}"/>
-      <text x="${m.x}" y="${m.y + 3.5}" text-anchor="middle" font-size="9" fill="#0e1220" font-weight="bold">${et.glyph[0]}</text>
-      ${sel ? '' : `<circle cx="${m.x}" cy="${m.y}" r="9" fill="none" stroke="${et.color}" stroke-opacity=".5"/>`}</g>`;
-    /* 线旁语义标签：放大到 80% 以上时显示 */
-    if (scale >= 0.8 && !sel) {
-      html += `<text class="wire-tag" x="${m.x}" y="${m.y - 13}" text-anchor="middle" font-size="10" fill="${et.color}">${et.name}</text>`;
-    }
+      <circle cx="${m.x}" cy="${m.y}" r="9"/><line x1="${m.x - 4.5}" y1="${m.y}" x2="${m.x + 4.5}" y2="${m.y}"/>
+      ${sel ? '' : '<line x1="' + m.x + '" y1="' + (m.y - 4.5) + '" x2="' + m.x + '" y2="' + (m.y + 4.5) + '"/>'}</g>`;
   });
   if (temp) html += `<path d="${wirePath(temp.a, temp.b)}" stroke="#8b7bff" stroke-width="2" fill="none" stroke-dasharray="6 4"/>`;
   svg.innerHTML = html;
@@ -456,6 +450,17 @@ vp.addEventListener('mousedown', e => {
     e.stopPropagation(); e.preventDefault();
     const tn = nodes.find(x => x.id === syncBtn.dataset.sync);
     if (tn && tn.status !== 'running') { pushUndo(); startGen(tn, '同步上游'); }
+    return;
+  }
+  // 节点右上「🔄 替换素材」
+  const qrBtn = e.target.closest('.qreplace');
+  if (qrBtn) { e.stopPropagation(); e.preventDefault(); pickFileForReplace(qrBtn.dataset.qr); return; }
+  // 节点右侧「＋」：弹出类型选择菜单，选择后创建并自动连线
+  const qcBtn = e.target.closest('.qcreate');
+  if (qcBtn) {
+    e.stopPropagation(); e.preventDefault();
+    const r = qcBtn.getBoundingClientRect();
+    openQuickCreate(r.right + 10, r.top - 20, { dir: 'out', from: qcBtn.dataset.qc });
     return;
   }
   // 分镜格子「⬆ 提升为镜头」
@@ -553,7 +558,7 @@ window.addEventListener('mouseup', e => {
       const to = linking.dir === 'out' ? other : linking.from;
       if (!edges.some(x => x.from === from && x.to === to)) {
         pushUndo();
-        if (addEdge(from, to)) { save(); toast('🔗 已连接（' + EDGE_META[edgeType(from, to)].name + '）'); }
+        if (addEdge(from, to)) { save(); toast('🔗 节点已连接，上游内容将流向下游'); }
       }
       linked = true;
     };
@@ -966,14 +971,8 @@ async function runChain() {
     frontier = nxt;
   }
   if (!order.length) { toast('当前节点没有下游节点：拖动输出端口连线后再试'); return; }
-  /* 链路预告：沿线统计各语义段，让用户在执行前知道这条链会做什么 */
-  const flow = {};
-  order.forEach(id => directUpstreams(id).forEach(u => {
-    if (seen.has(u.id) || u.id === start.id) { const et = EDGE_META[edgeType(u.id, id)]; flow[et.name] = (flow[et.name] || 0) + 1; }
-  }));
-  const flowTxt = Object.entries(flow).map(([k, v]) => v + '×' + k).join(' → ');
   chainBusy = true;
-  toast(`⚡ 链式生成开始 · 共 ${order.length} 个下游节点${flowTxt ? '（' + flowTxt + '）' : ''}`);
+  toast(`⚡ 链式生成开始 · 共 ${order.length} 个下游节点`);
   for (const id of order) {
     const n = nodes.find(x => x.id === id); if (!n) continue;
     selected = id; render(); openPanel();
@@ -1158,15 +1157,191 @@ $('gSend').addEventListener('click', () => {
   save();
 });
 
-/* ============ 素材库：四种内容类型（九宫格 / 合成视频由能力生成，不在库中） ============ */
-const lib = $('lib');
-Object.entries(TYPES).filter(([k]) => !['nine', 'edit'].includes(k)).forEach(([k, t]) => {
-  const d = document.createElement('div');
-  d.className = 'lib-item'; d.draggable = true;
-  d.innerHTML = `<div class="lib-ico" style="background:${t.color}22;color:${t.color}">${t.icon}</div>${t.label}${k === 'video' ? '<span style="font-size:10px;color:var(--text-dim);margin-left:4px">模拟</span>' : ''}`;
-  d.addEventListener('dragstart', ev => ev.dataTransfer.setData('type', k));
-  lib.appendChild(d);
-});
+/* ============ 右侧 Dock：新增 / 资产库 / 主体库 / 素材库 ============ */
+let assetsCache = null;   // { subjects, scenes } 预置资产
+let activeDock = null;    // 'add' | 'assets' | 'subjects' | 'stock'
+const DOCK_TITLES = { add: '新增节点', assets: '资产库', subjects: '主体库', stock: '素材库' };
+function toggleDock(section) {
+  activeDock = activeDock === section ? null : section;
+  document.querySelectorAll('.dock-btn').forEach(x => x.classList.remove('active'));
+  if (!activeDock) { $('dockPanel').classList.remove('show'); return; }
+  $(section === 'add' ? 'dockAdd' : section === 'assets' ? 'dockAssets' : section === 'subjects' ? 'dockSubjects' : 'dockStock').classList.add('active');
+  $('dpTitle').textContent = DOCK_TITLES[section];
+  $('dockPanel').classList.add('show');
+  ({ add: renderDockAdd, assets: renderDockAssets, subjects: renderDockSubjects, stock: renderDockStock })[section]();
+}
+/* 在画布中部空白处新增节点并选中 */
+function addNodeOfType(type) {
+  pushUndo();
+  const spot = findSpot(Math.round((innerWidth / 2 - panX) / scale - 170), Math.round((innerHeight / 2 - panY) / scale - 150), 360, 260);
+  const n = { id: uid(), type, x: spot.x, y: spot.y, status: 'idle', prompt: '双击或点击下方输入框，描述这个节点…', dur: type === 'video' ? '5s' : '—', vseed: Math.floor(Math.random() * 97) };
+  nodes.push(n); selected = n.id; render(); openPanel(); save();
+  toast('➕ 已新增' + TYPES[type].label + '节点，输入描述后点 ↑ 运行');
+}
+/* 用资产 url 新增图片节点 */
+function addAssetNode(url, label, prompt) {
+  pushUndo();
+  const spot = findSpot(Math.round((innerWidth / 2 - panX) / scale - 170), Math.round((innerHeight / 2 - panY) / scale - 150), 360, 260);
+  const n = { id: uid(), type: 'image', x: spot.x, y: spot.y, status: 'idle', prompt: prompt || label || '双击或点击下方输入框，描述这个节点…', label: label || '图片' };
+  if (url) n.url = url; else n.vseed = Math.floor(Math.random() * 97);
+  nodes.push(n); selected = n.id; render(); openPanel(); save();
+}
+/* 面板：新增（节点类型 + 场景模板） */
+function renderDockAdd() {
+  const box = $('dpBody');
+  box.innerHTML = '<div class="dp-sec">节点类型 · 点击新增</div><div class="dp-grid" id="dpTypes"></div>';
+  const types = box.querySelector('#dpTypes');
+  Object.entries(TYPES).filter(([k]) => !['nine', 'edit'].includes(k)).forEach(([k, t]) => {
+    const d = document.createElement('div');
+    d.className = 'dp-tile'; d.draggable = true;
+    d.innerHTML = '<div class="dp-thumb" style="background:' + t.color + '18;color:' + t.color + ';font-size:20px;display:flex;align-items:center;justify-content:center">' + t.icon + '</div><span>' + t.label + '</span>';
+    d.onclick = () => addNodeOfType(k);
+    d.addEventListener('dragstart', ev => ev.dataTransfer.setData('type', k));   // 拖到画布任意位置落点创建
+    d.addEventListener('dragend', () => closeDock());   // 落下或取消拖拽后收起面板
+    types.appendChild(d);
+  });
+}
+/* 面板：资产库（画布里一切真实图片/视频资产） */
+function renderDockAssets() {
+  const box = $('dpBody');
+  const urls = [];
+  nodes.forEach(n => {
+    [n.url, ...(n.urls || [])].forEach(u => { if (u && !u.startsWith('/api/') && !u.startsWith('data:') && !urls.includes(u)) urls.push(u); });
+  });
+  box.innerHTML = '<div class="dp-sec">项目产生的图片/视频 · 点击加入画布</div>' +
+    '<div class="dp-grid" id="dpAssets"></div>' +
+    (urls.length ? '' : '<div class="dp-empty">还没有资产：生成或上传后自动汇集到这里</div>');
+  const grid = box.querySelector('#dpAssets');
+  const up = document.createElement('div');
+  up.className = 'dp-tile';
+  up.innerHTML = '<div class="dp-thumb" style="display:flex;align-items:center;justify-content:center;font-size:20px">⬆</div><span>上传素材</span>';
+  up.onclick = () => $('fileInput').click();
+  grid.appendChild(up);
+  urls.forEach(u => {
+    const d = document.createElement('div');
+    d.className = 'dp-tile';
+    const isVideo = /\.(mp4|webm)$/i.test(u);
+    d.innerHTML = (isVideo ? '<div class="dp-thumb">🎬</div>' : '<div class="dp-thumb"><img src="' + u + '" loading="lazy"></div>') + '<span>' + u.split('/').pop().slice(0, 14) + '</span>';
+    d.onclick = () => addAssetNode(u, '资产');
+    d.draggable = true;
+    d.addEventListener('dragstart', ev => ev.dataTransfer.setData('asset', JSON.stringify({ url: u, label: '资产' })));
+    d.addEventListener('dragend', () => closeDock());
+    grid.appendChild(d);
+  });
+}
+/* ============ 作品库：顶栏入口 + 居中弹窗（历史生成，勾选发布到素材库） ============ */
+let worksSel = new Set();
+function openWorksModal() {
+  worksSel.clear();
+  $('worksModal').classList.add('show');
+  renderWorksGrid();
+}
+function closeWorksModal() { $('worksModal').classList.remove('show'); }
+async function renderWorksGrid() {
+  const grid = $('wmGrid');
+  grid.innerHTML = '<div class="dp-empty">加载中…</div>';
+  try {
+    const d = await api.getWorks();
+    const list = d.works || [];
+    grid.innerHTML = list.length ? '' : '<div class="dp-empty">还没有生成记录：跑一次生成就会出现在这里</div>';
+    list.forEach(w => {
+      const d = document.createElement('div');
+      d.className = 'wm-tile' + (w.published ? ' pub' : '') + (worksSel.has(w.id) ? ' sel' : '');
+      d.title = (w.prompt || '').slice(0, 100) + (w.published ? '（已发布到素材库）' : '');
+      d.innerHTML = '<div class="wm-thumb"><img src="' + w.url + '" loading="lazy">' + (w.published ? '<i class="dp-flag">已发布</i>' : '') + '</div>' +
+        '<div class="wm-meta"><span class="wm-prompt">' + esc((w.prompt || '').slice(0, 26)) + '</span><span class="wm-time">' + new Date(w.createdAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) + '</span></div>';
+      d.onclick = () => { worksSel.has(w.id) ? worksSel.delete(w.id) : worksSel.add(w.id); d.classList.toggle('sel'); };
+      grid.appendChild(d);
+    });
+    $('wmCount').textContent = list.length ? '共 ' + list.length + ' 个作品 · 已勾选 ' + worksSel.size : '';
+  } catch (e) {
+    grid.innerHTML = '<div class="dp-empty">加载失败：' + e.message + '</div>';
+  }
+}
+function initWorksModal() {
+  const wmb = document.querySelector('[title^="作品库"]');
+  if (wmb) wmb.addEventListener('click', openWorksModal);
+  $('wmClose').onclick = closeWorksModal;
+  $('wmAdd').onclick = () => {
+    if (!worksSel.size) { toast('请先勾选作品'); return; }
+    const ids = [...worksSel];
+    ids.forEach(() => {});
+    (async () => {
+      const d = await api.getWorks();
+      (d.works || []).filter(w => worksSel.has(w.id)).forEach(w => addAssetNode(w.url, '作品', w.prompt || ''));
+      worksSel.clear(); closeWorksModal();
+      toast('⬎ 已把选中作品加入画布');
+    })();
+  };
+  $('wmPub').onclick = async () => {
+    if (!worksSel.size) { toast('请先勾选要发布的作品'); return; }
+    const ids = [...worksSel];
+    try {
+      await api.publishWorks(ids, true);
+      worksSel.clear();
+      toast('📤 已发布 ' + ids.length + ' 个作品到素材库（🗂 素材库可查看）');
+      renderWorksGrid();
+    } catch (e) { toast('发布失败：' + e.message); }
+  };
+}
+/* 面板：主体库 / 素材库（预置资产） */
+function renderPresetGrid(list, box, labelPrefix) {
+  const grid = box.querySelector('#dpAssets');
+  list.forEach(pc => {
+    const d = document.createElement('div');
+    d.className = 'dp-tile';
+    d.innerHTML = '<div class="dp-thumb"><img src="' + sceneURL(pc.seed) + '" loading="lazy"></div><span>' + esc(pc.name) + '</span>';
+    d.title = pc.prompt;
+    d.onclick = () => addAssetNode(null, labelPrefix + ' · ' + pc.name, pc.prompt);
+    d.draggable = true;
+    d.addEventListener('dragstart', ev => ev.dataTransfer.setData('asset', JSON.stringify({ label: labelPrefix + ' · ' + pc.name, prompt: pc.prompt, seed: pc.seed })));
+    d.addEventListener('dragend', () => closeDock());
+    grid.appendChild(d);
+  });
+}
+function renderDockSubjects() {
+  const box = $('dpBody');
+  box.innerHTML = '<div class="dp-sec">预置 IP 形象 · 点击加入画布作为主体参考</div><div class="dp-grid" id="dpAssets"></div>' +
+    (assetsCache ? '' : '<div class="dp-empty">加载中…</div>');
+  if (assetsCache) renderPresetGrid(assetsCache.subjects, box, '主体');
+}
+async function renderDockStock() {
+  const box = $('dpBody');
+  box.innerHTML = '<div class="dp-sec">已发布作品 · 模板式复用</div><div class="dp-grid" id="dpPub"><div class="dp-empty">加载中…</div></div>' +
+    '<div class="dp-sec">场景素材 · 点击加入画布</div><div class="dp-grid" id="dpAssets"></div>' +
+    (assetsCache ? '' : '<div class="dp-empty">加载中…</div>') +
+    '<div class="dp-sec">场景模板 · 整张画布一键套用</div><div class="dp-tps" id="dpTps">' +
+    (tplCache ? '' : '<div class="dp-empty">模板加载中…</div>') + '</div>';
+  if (assetsCache) renderPresetGrid(assetsCache.scenes, box, '素材');
+  if (tplCache) renderTemplates(tplCache, box.querySelector('#dpTps'));
+  try {
+    const d = await api.getWorks(true);
+    const list = d.works || [];
+    const pub = box.querySelector('#dpPub');
+    pub.innerHTML = list.length ? '' : '<div class="dp-empty">暂无：在「🖼 作品库」勾选作品点「发布到素材库」</div>';
+    list.forEach(w => {
+      const d = document.createElement('div');
+      d.className = 'dp-tile';
+      d.title = (w.prompt || '').slice(0, 80);
+      d.innerHTML = '<div class="dp-thumb"><img src="' + w.url + '" loading="lazy"></div><span>' + (w.prompt || '作品').slice(0, 10) + '</span>';
+      d.onclick = () => addAssetNode(w.url, '素材', w.prompt || '');
+      d.draggable = true;
+      d.addEventListener('dragstart', ev => ev.dataTransfer.setData('asset', JSON.stringify({ url: w.url, label: '素材 · 作品', prompt: w.prompt || '' })));
+      pub.appendChild(d);
+    });
+  } catch (_) {
+    box.querySelector('#dpPub').innerHTML = '<div class="dp-empty">已发布作品加载失败</div>';
+  }
+}
+function closeDock() { if (activeDock) toggleDock(activeDock); }
+function initDock() {
+  [['dockAdd', 'add'], ['dockAssets', 'assets'], ['dockSubjects', 'subjects'], ['dockStock', 'stock']]
+    .forEach(([id, sec]) => { $(id).onclick = () => toggleDock(sec); });
+  $('dpClose').onclick = () => toggleDock(activeDock);
+  $('dockVision').onclick = () => { toast($('dockVision').title || '视觉参考通道状态未知'); };
+  api.getAssets().then(d => { assetsCache = d; if (activeDock === 'subjects') renderDockSubjects(); if (activeDock === 'stock') renderDockStock(); }).catch(() => {});
+}
+initDock();
 wrap.addEventListener('dragover', e => e.preventDefault());
 /* 图例折叠 */
 const legendEl = $('legend');
@@ -1181,8 +1356,7 @@ function tplMeta(tpl) {
   tpl.nodes.forEach(n => { cnt[n.type] = (cnt[n.type] || 0) + 1; });
   return Object.entries(cnt).map(([k, v]) => TYPE_LABEL[k] + '×' + v).join(' · ');
 }
-function renderTemplates(list) {
-  const box = $('tplLib');
+function renderTemplates(list, box) {
   if (!box) return;
   box.innerHTML = '';
   list.forEach(tpl => {
@@ -1190,8 +1364,11 @@ function renderTemplates(list) {
     d.className = 'tpl';
     d.innerHTML = `<div class="tpl-top"><span class="tpl-ico">${tpl.icon}</span>${esc(tpl.name)}</div>
       <div class="tpl-desc">${esc(tpl.desc)}</div>
-      <div class="tpl-meta">${tpl.nodes.length} 节点 · ${tplMeta(tpl)} → 点击套用</div>`;
+      <div class="tpl-meta">${tpl.nodes.length} 节点 · ${tplMeta(tpl)} → 点击/拖入画布套用</div>`;
     d.addEventListener('click', () => applyTemplate(tpl));
+    d.draggable = true;
+    d.addEventListener('dragstart', ev => ev.dataTransfer.setData('template', tpl.id));   // 拖入画布 = 开新画布
+    d.addEventListener('dragend', () => closeDock());
     box.appendChild(d);
   });
 }
@@ -1215,8 +1392,8 @@ function applyTemplate(tpl) {
   toast('📦 已套用模板「' + tpl.name + '」，Ctrl+Z 可撤销');
 }
 api.getTemplates()
-  .then(d => { tplCache = d.templates || []; renderTemplates(tplCache); })
-  .catch(() => { const b = $('tplLib'); if (b) b.innerHTML = '<div class="tpl-loading">模板加载失败，刷新重试</div>'; });
+  .then(d => { tplCache = d.templates || []; if (activeDock === 'add') renderDockAdd(); })
+  .catch(() => {});
 
 /* ============ 复制所选（工具条 ⧉ / Ctrl+D 共用） ============ */
 function dupSelected() {
@@ -1298,6 +1475,8 @@ vp.addEventListener('dblclick', e => {
   else $('gInput').focus();
 });
 window.addEventListener('keydown', e => {
+  const mod0 = e.ctrlKey || e.metaKey;
+  if (mod0 && e.key.toLowerCase() === 's') { e.preventDefault(); saveCanvas(); return; }
   if (e.key === 'Escape' && ninePick) { exitNinePick(); return; }
   if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') {
     return;
@@ -1374,13 +1553,32 @@ function restoreSnapshot(s) {
 }
 function undo() { if (!undoStack.length) { toast('没有可撤销的操作'); return; } redoStack.push(serialize()); restoreSnapshot(undoStack.pop()); toast('↩ 已撤销'); }
 function redo() { if (!redoStack.length) { toast('没有可重做的操作'); return; } undoStack.push(serialize()); restoreSnapshot(redoStack.pop()); toast('↪ 已重做'); }
+function saveNow() {
+  clearTimeout(saveTimer);
+  const payload = { nodes, edges, groups, view: { scale, panX, panY } };
+  try { localStorage.setItem(LS_KEY, JSON.stringify(payload)); } catch (_) {}
+  return api.putProject(payload);
+}
 function save() {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    const payload = { nodes, edges, groups, view: { scale, panX, panY } };
-    try { localStorage.setItem(LS_KEY, JSON.stringify(payload)); } catch (_) {}
-    api.putProject(payload).catch(() => { /* 服务端不可达时静默，本地已有兜底 */ });
-  }, 300);
+  saveTimer = setTimeout(() => { saveNow().catch(() => { /* 服务端不可达时静默，本地已有兜底 */ }); }, 300);
+}
+/* 手动保存：顶栏「💾 保存」/ Ctrl+S，立即落库并给出反馈 */
+async function saveCanvas() {
+  const btn = $('saveBtn');
+  const orig = '💾 保存';
+  if (btn) btn.textContent = '⏳ 保存中…';
+  try {
+    await saveNow();
+    toast('💾 画布已保存 · ' + new Date().toLocaleTimeString('zh-CN', { hour12: false }));
+    if (btn) {
+      btn.textContent = '✓ 已保存';
+      setTimeout(() => { btn.textContent = orig; }, 1800);
+    }
+  } catch (_) {
+    toast('❌ 保存失败：服务端不可达（内容已暂存本地，恢复网络后再次保存）');
+    if (btn) setTimeout(() => { btn.textContent = orig; }, 1800);
+  }
 }
 async function loadProject() {
   try {
@@ -1487,12 +1685,33 @@ wrap.addEventListener('drop', e => {
     }
     return;
   }
+  const r = wrap.getBoundingClientRect();
+  const dx = Math.round((e.clientX - r.left - panX) / scale - 140), dy = Math.round((e.clientY - r.top - panY) / scale - 90);
+  /* 拖入模板 = 整张画布替换为新画布 */
+  const tplId = e.dataTransfer.getData('template');
+  if (tplId) {
+    const tpl = (tplCache || []).find(x => x.id === tplId);
+    if (tpl) { closeDock(); applyTemplate(tpl); toast('📦 已拖入模板「' + tpl.name + '」，画布已更新'); }
+    return;
+  }
+  /* 拖入素材/主体/资产 → 落点创建图片节点 */
+  const assetRaw = e.dataTransfer.getData('asset');
+  if (assetRaw) {
+    let a2 = {}; try { a2 = JSON.parse(assetRaw); } catch (_) {}
+    pushUndo();
+    const n = { id: uid(), type: 'image', x: dx, y: dy, status: 'idle', label: a2.label || '素材', prompt: a2.prompt || '双击或点击下方输入框，描述这个节点…' };
+    if (a2.url) n.url = a2.url; else n.vseed = a2.seed != null ? a2.seed : Math.floor(Math.random() * 97);
+    nodes.push(n); selected = n.id; render(); openPanel(); save();
+    closeDock();
+    toast('🖼 已放入素材「' + (a2.label || '图片') + '」，可连线后作为下游参考');
+    return;
+  }
   const type = e.dataTransfer.getData('type'); if (!type) return;
   pushUndo();
-  const r = wrap.getBoundingClientRect();
-  const n = { id: uid(), type, x: Math.round((e.clientX - r.left - panX) / scale - 140), y: Math.round((e.clientY - r.top - panY) / scale - 90),
+  const n = { id: uid(), type, x: dx, y: dy,
     status: 'idle', prompt: '双击或点击下方输入框，描述这个节点…', dur: type === 'video' ? '5s' : '—', vseed: Math.floor(Math.random() * 97) };
   nodes.push(n); selected = n.id; render(); openPanel(); save();
+  closeDock();
 });
 /* Ctrl+V 粘贴截图 / 图片直接上传 */
 window.addEventListener('paste', e => {
@@ -1577,7 +1796,8 @@ function switchMode(m) {
   $('msCanvas').classList.toggle('active', !ed);
   $('msEditor').classList.toggle('active', ed);
   wrap.style.display = ed ? 'none' : 'block';
-  document.querySelector('.sidebar').style.display = ed ? 'none' : 'flex';
+  document.getElementById('dock').style.display = ed ? 'none' : 'flex';
+  if (ed) document.getElementById('dockPanel').classList.remove('show');
   document.querySelector('.zoombar').style.display = ed ? 'none' : 'flex';
   hideFloaters();
   $('editorView').classList.toggle('show', ed);
@@ -1771,15 +1991,166 @@ async function exportFilm() {
 }
 $('tlExport').addEventListener('click', exportFilm);
 
+/* ============ 设置中心：模型供应商配置（读取/保存 /api/config） ============ */
+let settingsCache = null;
+async function openSettings() {
+  try { settingsCache = await api.getConfig(); } catch (_) { settingsCache = null; }
+  const p = (settingsCache && settingsCache.provider && settingsCache.provider.sensenova) || {};
+  $('smBase').value = p.baseUrl || '';
+  $('smKey').value = p.apiKey || '';
+  $('smText').value = p.textModel || '';
+  $('smImage').value = p.imageModel || '';
+  $('smVision').value = p.visionModel || '';
+  $('smTip').textContent = '';
+  renderProviderPresets();
+  $('settingsModal').classList.add('show');
+}
+/* 常用供应商预置：点击填入网关地址与默认模型，用户只需补 API Key */
+function renderProviderPresets() {
+  const presets = (settingsCache && settingsCache.presets) || [];
+  const box = $('smPresets');
+  if (!box) return;
+  box.innerHTML = presets.map((pc, i) => `<button class="sm-preset" data-pi="${i}" title="${esc(pc.note || pc.baseUrl)}">${esc(pc.name)}</button>`).join('');
+  box.querySelectorAll('[data-pi]').forEach(b => b.onclick = () => {
+    const pc = presets[+b.dataset.pi];
+    if (!pc) return;
+    $('smBase').value = pc.baseUrl;
+    $('smText').value = pc.textModel || '';
+    $('smImage').value = pc.imageModel || '';
+    $('smVision').value = pc.visionModel || pc.textModel || '';
+    $('smKey').value = '';
+    $('smTip').textContent = '已填入「' + pc.name + '」预设' + (pc.note ? '（' + pc.note + '）' : '') + '，输入该平台的 API Key 后保存';
+    $('smTip').style.color = 'var(--text-dim)';
+  });
+}
+function collectSettings() {
+  const base = (settingsCache && settingsCache) || {};
+  const p = {
+    baseUrl: $('smBase').value.trim(),
+    apiKey: $('smKey').value.trim(),
+    textModel: $('smText').value.trim(),
+    imageModel: $('smImage').value.trim(),
+    visionModel: $('smVision').value.trim(),
+  };
+  return { provider: { sensenova: p }, models: base.models };
+}
+async function saveSettings() {
+  const payload = collectSettings();
+  const r = await fetch('/api/config', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  settingsCache = payload;
+}
+function closeSettings() { $('settingsModal').classList.remove('show'); }
+/* 模型分类启发式：按 id 关键词归入图片/视觉，其余归文本 */
+const IMG_MODEL_RE = /(image|dall-e|dalle|cogview|seedream|kolors|wanx|flux|stable|sd3|sdxl|u1|t2i|irag|janus)/i;
+const VIS_MODEL_RE = /(vl|vision|4o|4v|vlm|-v-|gemini)/i;
+function classifyModels(ids) {
+  const text = [], image = [], vision = [];
+  for (const id of ids) {
+    if (IMG_MODEL_RE.test(id)) image.push(id);
+    else if (VIS_MODEL_RE.test(id)) vision.push(id);
+    else text.push(id);
+  }
+  return { text: text.slice(0, 40), image: image.slice(0, 40), vision: vision.slice(0, 40) };
+}
+/* 填写 Key 后自动拉取该网关可用模型，填充模型选择列表（服务端代理避免跨域） */
+let fetchingModels = false;
+async function autoFetchModels() {
+  const baseUrl = $('smBase').value.trim(), apiKey = $('smKey').value.trim();
+  if (fetchingModels || !baseUrl || !apiKey) return;
+  fetchingModels = true;
+  const tip = $('smTip');
+  tip.textContent = '⏳ 正在拉取该网关的可用模型…'; tip.style.color = 'var(--text-dim)';
+  try {
+    const r = await fetch('/api/models', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ baseUrl, apiKey }) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'HTTP ' + r.status);
+    const ids = d.models || [];
+    if (!ids.length) throw new Error('网关未返回任何模型');
+    const cat = classifyModels(ids);
+    const cur = settingsCache || {};
+    settingsCache = { ...cur, models: { ...cur.models, text: cat.text.length ? cat.text : cur.models?.text, image: cat.image.length ? cat.image : cur.models?.image } };
+    // 各栏为空时填入该分类第一个；列表在保存后同步到生成面板下拉
+    if (!$('smText').value && cat.text.length) $('smText').value = cat.text[0];
+    if (!$('smImage').value && cat.image.length) $('smImage').value = cat.image[0];
+    if (!$('smVision').value && cat.vision.length) $('smVision').value = cat.vision[0];
+    tip.textContent = `✓ 拉取到 ${ids.length} 个模型（文本 ${cat.text.length} · 图片 ${cat.image.length} · 视觉 ${cat.vision.length}），点「保存配置」后同步到生成面板`;
+    tip.style.color = 'var(--green)';
+  } catch (e) {
+    tip.textContent = '✗ 模型拉取失败：' + e.message + '（可手动填写模型名）';
+    tip.style.color = '#f5c26b';
+  }
+  fetchingModels = false;
+}
+function initSettings() {
+  const gear = document.querySelector('[title^="设置"]');
+  if (gear) gear.addEventListener('click', openSettings);
+  $('smClose').onclick = closeSettings;
+  $('smSave').onclick = async () => {
+    const b = $('smSave'); b.textContent = '保存中…';
+    try {
+      await saveSettings();
+      $('smTip').textContent = '✓ 配置已保存'; $('smTip').style.color = 'var(--green)'; toast('⚙ 模型配置已保存'); await refreshVisionStatus();
+      /* 模型清单同步到生成面板下拉（视频/音频保持不变） */
+      const m = settingsCache && settingsCache.models;
+      if (m) {
+        for (const k of Object.keys(GEN_TABS)) {
+          if (Array.isArray(m[k]) && m[k].length) GEN_TABS[k].models = m[k];
+        }
+        if (selected) setTab(curTab);
+      }
+    }
+    catch (e) { $('smTip').textContent = '✗ 保存失败：' + e.message; $('smTip').style.color = '#f5c26b'; }
+    b.textContent = '保存配置';
+  };
+  ['smKey', 'smBase'].forEach(id => $(id).addEventListener('change', autoFetchModels));
+  $('smTest').onclick = async () => {
+    const tip = $('smTip');
+    tip.textContent = '⏳ 正在检测（先保存配置，再探测视觉通道）…'; tip.style.color = 'var(--text-dim)';
+    try {
+      await saveSettings();
+      const s = await (await fetch('/api/vision-status?force=1')).json();
+      tip.textContent = s.configured ? (s.ok ? '✓ 连通正常：视觉通道可用' : '✗ 通道繁忙：' + (s.lastError || '未知错误').slice(0, 80)) : '✗ 未配置 API Key';
+      tip.style.color = s.ok ? 'var(--green)' : '#f5c26b';
+    } catch (e) { tip.textContent = '✗ 检测失败：' + e.message; tip.style.color = '#f5c26b'; }
+  };
+}
+
+/* ============ 登录门：口令校验（/api/auth/*），未登录时 API 全部 401 ============ */
+function showLogin() {
+  const v = $('loginView');
+  if (v) { v.style.display = 'flex'; setTimeout(() => { const i = $('loginPwd'); if (i) i.focus(); }, 50); }
+}
+async function tryLogin() {
+  const pwd = $('loginPwd').value;
+  if (!pwd) { $('loginErr').textContent = '请输入访问口令'; return; }
+  $('loginBtn').textContent = '登录中…';
+  try {
+    const r = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pwd }) });
+    if (r.ok) { location.reload(); return; }
+    $('loginErr').textContent = (await r.json().catch(() => ({}))).error || '密码错误';
+  } catch (_) { $('loginErr').textContent = '网络错误，请重试'; }
+  $('loginBtn').textContent = '登 录';
+}
+function initLogin() {
+  $('loginBtn').onclick = tryLogin;
+  $('loginPwd').addEventListener('keydown', e => { if (e.key === 'Enter') tryLogin(); });
+}
+initSettings();
+initWorksModal();
+initLogin();
+
 /* ============ 视觉参考通道状态灯 ============ */
 async function refreshVisionStatus() {
   try {
     const s = await (await fetch('/api/vision-status')).json();
-    const el = $('visionStatus'); if (!el) return;
-    if (!s.configured) { el.textContent = '⚪ 视觉参考未配置'; el.style.color = 'var(--text-dim)'; return; }
-    el.textContent = s.ok ? '🟢 视觉参考通道：可用' : '🔴 视觉参考通道：繁忙 · 自动重试中';
-    el.title = s.lastError ? '最近错误：' + s.lastError : '';
-    el.style.color = s.ok ? 'var(--green)' : '#f5c26b';
+    const dot = $('dockVision'), row = $('dpVision');
+    if (!dot) return;
+    const txt = !s.configured ? '⚪ 视觉参考未配置' : s.ok ? '🟢 视觉参考通道：可用' : '🔴 视觉参考通道：繁忙 · 自动重试中';
+    const color = !s.configured ? 'var(--text-dim)' : s.ok ? 'var(--green)' : '#f5c26b';
+    dot.style.color = color;
+    dot.title = txt + (s.lastError ? '（最近错误：' + s.lastError + '）' : '');
+    if (row) { row.textContent = txt; row.title = dot.title; row.style.color = color; }
   } catch (_) {}
 }
 refreshVisionStatus();
@@ -1787,6 +2158,11 @@ setInterval(refreshVisionStatus, 60 * 1000);
 
 /* ============ 初始化：拉取模型配置 + 从服务端加载项目 ============ */
 (async function init() {
+  // 登录门：未通过口令校验时只显示登录页，不加载画布数据
+  try {
+    const st = await (await fetch('/api/auth/status')).json();
+    if (!st.authed) { showLogin(); return; }
+  } catch (_) { showLogin(); return; }
   // 模型清单以服务端 data/config.json 为准（本地 GEN_TABS 仅作兜底默认值）
   try {
     const cfg = await api.getConfig();

@@ -25,6 +25,9 @@ export default function Home() {
                     <button className="icon-btn" title="重做 (Ctrl+Y)" onClick={call("redo")}>↪</button>
                     <button className="icon-btn" title="新建画布" onClick={call("newCanvas")}>✚</button>
                     <button className="icon-btn" title="自动布局" onClick={call("autoLayout")}>⌗</button>
+                    <button className="btn-save" id="saveBtn" title="保存画布 (Ctrl+S)" onClick={call("saveCanvas")}>💾 保存</button>
+                    <button className="btn-save" title="作品库：历史生成的作品">🖼 作品库</button>
+                    <button className="icon-btn" title="设置 · 模型供应商" onClick={call("openSettings")}>⚙</button>
                     <button className="btn-primary" onClick={call("composeAll")}>⚡ 一键成片</button>
                     <div className="avatar">A</div>
                 </div>
@@ -40,7 +43,7 @@ export default function Home() {
                 <div className="empty-hint" id="emptyHint">
                     <div className="big">🎞</div>
                     <b>画布空空如也</b>
-                    <span>① 左侧选模板套用 ② 改文案 ③ ⏩ 链式生成 ④ ⚡ 合成视频进编辑器<br />每种节点有专属能力工具条 · 连线颜色见左下图例</span>
+                    <span>① 左侧 Dock 新增节点或套用模板 ② 改文案 ③ ⏩ 链式生成 ④ ⚡ 合成视频进编辑器<br />每种节点有专属能力工具条，内容沿连线流向下游</span>
                 </div>
             </div>
 
@@ -98,14 +101,18 @@ export default function Home() {
             </div>
             <input type="file" id="fileInput" accept="image/*" style={{ display: "none" }} onChange={(e) => (window as unknown as Engine).onFilePicked?.(e)} />
 
-            {/* 左侧素材库 + 场景模板库 */}
-            <div className="sidebar">
-                <h3>节点素材库</h3>
-                <div className="vision-status" id="visionStatus">⚪ 视觉参考检测中…</div>
-                <div className="items" id="lib"></div>
-                <h3 style={{ marginTop: "14px" }}>场景模板 <span style={{ fontSize: "11px", fontWeight: 400, opacity: 0.6 }}>点击一键套用</span></h3>
-                <div className="tpls" id="tplLib"><div className="tpl-loading">模板加载中…</div></div>
-                <div className="hint">拖入节点 / 拖入图片文件上传<br />文件拖到节点上 = 替换素材<br />Ctrl+V 粘贴截图直接上传<br />选中节点 → 工具条能力 / 🔄 / 🗑<br />📦 绑组：Shift+点击多选，或单选连带上游成组<br />连线两侧自动传递内容：<br />上游文案/图片 → 下游生成参考<br />⚠ 上游变化 → 点击「同步」更新<br />⏩ 链式生成：沿连线逐级生成<br />拖动端口 / 连线 ⊕ 建立连接<br />拖线到空白 → 快速创建节点<br />双击图片 → 大图预览 / 下载<br />Ctrl+Z 撤销 · Ctrl+D 复制<br />右键画布 → 快速创建</div>
+            {/* 右侧悬浮 Dock：新增 / 资产库 / 主体库 / 素材库 */}
+            <div className="dock" id="dock">
+                <button className="dock-btn accent" id="dockAdd" title="新增：节点类型与场景模板">＋</button>
+                <button className="dock-btn" id="dockAssets" title="资产库：项目中产生的图片/视频资产">🧊</button>
+                <button className="dock-btn" id="dockSubjects" title="主体库：预置 IP 形象">🧑‍🎤</button>
+                <button className="dock-btn" id="dockStock" title="素材库：场景素材">🗂</button>
+                <button className="dock-dot" id="dockVision" title="视觉参考通道状态">●</button>
+            </div>
+            <div className="dock-panel" id="dockPanel">
+                <div className="dp-head"><b id="dpTitle"></b><button id="dpClose" title="收起">✕</button></div>
+                <div className="dp-vision" id="dpVision">⚪ 视觉参考检测中…</div>
+                <div className="dp-body" id="dpBody"></div>
             </div>
 
             {/* 缩放栏 */}
@@ -118,6 +125,50 @@ export default function Home() {
 
             <div className="toast" id="toast"></div>
 
+            {/* 设置中心：模型供应商配置 */}
+            <div className="settings-modal" id="settingsModal">
+                <div className="sm-head"><b>⚙ 设置 · 模型供应商</b><button id="smClose" title="关闭">✕</button></div>
+                <div className="sm-body">
+                    <div className="sm-presets-wrap"><span className="sm-sec">常用供应商 · 点击填入，再补 API Key</span><div className="sm-presets" id="smPresets"></div></div>
+                    <label>网关地址<input id="smBase" placeholder="https://token.sensenova.cn/v1" /></label>
+                    <label>API Key<input id="smKey" type="password" placeholder="sk-…" /></label>
+                    <div className="sm-row">
+                        <label>文本模型<input id="smText" /></label>
+                        <label>图片模型<input id="smImage" /></label>
+                        <label>视觉模型<input id="smVision" /></label>
+                    </div>
+                    <div className="sm-tip" id="smTip"></div>
+                </div>
+                <div className="sm-foot">
+                    <button id="smTest" className="btn-save">🔍 检测连通性</button>
+                    <span style={{ flex: 1 }}></span>
+                    <button id="smSave" className="btn-primary">保存配置</button>
+                </div>
+            </div>
+
+            {/* 登录页：未通过口令校验时覆盖全屏 */}
+            <div className="login-view" id="loginView" style={{ display: "none" }}>
+                <div className="login-card">
+                    <div className="login-logo">✦ 织影 WeaveReel</div>
+                    <div className="login-sub">AI 视频创作工作台 · 请输入访问口令</div>
+                    <input id="loginPwd" type="password" placeholder="访问口令" />
+                    <button id="loginBtn">登 录</button>
+                    <div className="login-err" id="loginErr"></div>
+                </div>
+            </div>
+
+            {/* 作品库弹窗：历史生成浏览 + 勾选发布到素材库 */}
+            <div className="works-modal" id="worksModal">
+                <div className="wm-head"><b>🖼 作品库 · 历史生成</b><span id="wmCount" className="wm-count"></span><button id="wmClose" title="关闭">✕</button></div>
+                <div className="wm-grid" id="wmGrid"><div className="dp-empty">加载中…</div></div>
+                <div className="sm-foot">
+                    <span className="dp-empty" style={{ padding: 0 }}>勾选作品后：</span>
+                    <button id="wmAdd" className="btn-save">⬎ 加入画布</button>
+                    <span style={{ flex: 1 }}></span>
+                    <button id="wmPub" className="btn-primary">📤 发布到素材库</button>
+                </div>
+            </div>
+
             {/* 九宫格类型选择条：点「▦ 九宫格」后顶部出现，选类型后底部对话区带技能前缀直接输入 */}
             <div className="nine-bar" id="nineBar">
                 <span className="nb-title">▦ 九宫格</span>
@@ -126,13 +177,7 @@ export default function Home() {
                 <span id="nbTypes" style={{ display: "inline-flex", gap: "6px", flexWrap: "wrap" }}></span>
                 <button className="nb-close" id="nbClose" title="退出九宫格">✕</button>
             </div>
-            <div className="legend" id="legend" title="点击折叠/展开">
-                <b>连线图例</b>
-                <div className="lg-row"><span className="lg-dot" style={{ background: "#4f8cff" }}></span>可视化：文案 → 图片/视频</div>
-                <div className="lg-row"><span className="lg-dot" style={{ background: "#3ecf8e" }}></span>参考：图片 → 图片（延续风格）</div>
-                <div className="lg-row"><span className="lg-dot" style={{ background: "#f5a623" }}></span>拆解：素材 → 九宫格 · ⬆ 提升</div>
-                <div className="lg-row"><span className="lg-dot" style={{ background: "#f5576c" }}></span>入片：素材 → 合成视频 → 编辑器</div>
-            </div>
+
             <div className="ctx-menu" id="ctxMenu">
                 <button onClick={call("ctxAction", "add")}>➕ 添加下游节点</button>
                 <button onClick={call("ctxAction", "chain")}>⏩ 从此节点链式生成</button>
