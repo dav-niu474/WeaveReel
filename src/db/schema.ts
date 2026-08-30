@@ -29,6 +29,7 @@ export const tasks = sqliteTable("tasks", {
     textResult: text("text_result"),
     error: text("error"),
     refMode: text("ref_mode"), // described | note | reused | none
+    gridMode: text("grid_mode"), // 九宫格技能：inspire | story | action | panorama | dance
     simulated: integer("simulated").notNull().default(0),
     promptUsed: text("prompt_used"),
     cellPromptsJson: text("cell_prompts_json"),

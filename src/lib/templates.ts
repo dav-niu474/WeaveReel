@@ -39,7 +39,7 @@ export const TEMPLATES: CanvasTemplate[] = [
             { id: "e", type: "edit", x: 1740, y: 300, prompt: "把上游画面与分镜合成 30 秒旅行 Vlog，硬切节奏配卡点" },
         ],
         edges: [
-            { from: "a", to: "b" }, { from: "b", to: "c" }, { from: "b", to: "d" }, { from: "c", to: "e" }, { from: "d", to: "e" },
+            { from: "a", to: "b" }, { from: "b", to: "c" }, { from: "c", to: "e" }, { from: "d", to: "e" },
         ],
     },
     {
@@ -86,7 +86,7 @@ export const TEMPLATES: CanvasTemplate[] = [
             { id: "d", type: "edit", x: 1740, y: 300, prompt: "合成 60 秒科普视频：图解分镜逐条推进，配音同步，关键句字幕强调" },
         ],
         edges: [
-            { from: "a", to: "b" }, { from: "a", to: "c" }, { from: "b", to: "d" }, { from: "c", to: "d" },
+            { from: "a", to: "b" }, { from: "b", to: "d" }, { from: "c", to: "d" },
         ],
     },
     {

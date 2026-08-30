@@ -37,20 +37,39 @@
   #canvas-wrap.connecting{cursor:crosshair}
   #viewport{position:absolute;top:0;left:0;transform-origin:0 0}
   svg#wires{position:absolute;top:0;left:0;overflow:visible;pointer-events:none}
-  .wire{fill:none;stroke:#4a5273;stroke-width:2;pointer-events:stroke;cursor:pointer}
-  .wire:hover{stroke:var(--accent-2)}
-  .wire.selected{stroke:var(--accent-2);stroke-width:2.5}
-  /* 上游节点已有产出 → 连线点亮，表示这条线有内容在流动 */
-  .wire.fed{stroke:#3f8f6f}
-  .wire.fed:hover,.wire.fed.selected{stroke:var(--accent-2)}
+  .wire{fill:none;stroke-width:2;pointer-events:stroke;cursor:pointer;transition:opacity .15s}
+  .wire:hover{stroke-width:2.5}
+  .wire.selected{stroke:var(--accent-2) !important;stroke-width:2.5}
+  .wire.fed{stroke-width:2.5;filter:drop-shadow(0 0 4px rgba(255,255,255,.25))}
   .wire-mid{cursor:pointer}
-  .wire-mid circle{fill:#12141c;stroke:#5a628a;stroke-width:1.5;transition:.15s}
-  .wire-mid line{stroke:#5a628a;stroke-width:1.5}
-  .wire-mid:hover circle{stroke:var(--accent-2);fill:var(--accent-2)}
-  .wire-mid:hover line{stroke:#fff}
+  .wire-mid circle{stroke:rgba(255,255,255,.25);stroke-width:1}
+  .wire-mid text{pointer-events:none}
+  .wire-tag{pointer-events:none;font-family:inherit;paint-order:stroke;stroke:#0e1220;stroke-width:3px}
+  .wire-mid:hover circle{stroke:var(--accent-2)}
 
   /* ===== 节点 ===== */
   .node{position:absolute;user-select:none;cursor:move}
+  /* 角色标签：素材 / 结构 / 组装 */
+  .role-tag{font-size:9px;padding:1px 6px;border-radius:6px;margin-left:6px;vertical-align:1px;font-weight:400;letter-spacing:1px}
+  .role-asset{background:#3ecf8e1f;color:#3ecf8e}
+  .role-struct{background:#f5a6231f;color:#f5a623}
+  .role-group{background:#f5576c1f;color:#f5576c}
+  /* 分镜（结构）虚线描边，成片（组装）加粗红描边 —— 与素材实线区分 */
+  .node.t-nine .node-card{border-style:dashed;border-color:#f5a62355}
+  .node.t-nine.selected .node-card{border-color:#f5a623}
+  .node.t-edit .node-card{border-width:2px;border-color:#f5576c55}
+  .node.t-edit.selected .node-card{border-color:#f5576c}
+  /* 分镜格子提升按钮 */
+  .nine-cell{position:relative;display:block}
+  .cell-promote{position:absolute;right:4px;bottom:4px;width:22px;height:22px;border-radius:7px;border:1px solid rgba(255,255,255,.25);
+    background:rgba(10,14,24,.72);color:#f5a623;font-size:12px;line-height:1;cursor:pointer;opacity:0;transition:.15s;z-index:3}
+  .nine-cell:hover .cell-promote{opacity:1}
+  .cell-promote:hover{background:#f5a623;color:#0e1220;border-color:#f5a623}
+  /* 成片节点：汇集清单 + 进编辑器 */
+  .ed-stats{padding:0 14px 8px;font-size:11px;color:var(--text-dim)}
+  .ed-open{display:block;width:calc(100% - 28px);margin:0 14px 12px;padding:9px 0;border:none;border-radius:9px;cursor:pointer;
+    background:linear-gradient(135deg,#f5576c,#f5a623);color:#fff;font-size:13px;font-weight:600;transition:.15s}
+  .ed-open:hover{filter:brightness(1.12)}
   .node-label{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-dim);margin:0 0 6px 4px}
   .node-label svg{width:14px;height:14px}
   .node-card{position:relative;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
@@ -124,6 +143,14 @@
   .g-tabs .mini{color:var(--text-dim);font-size:15px;padding:4px 8px}
   .g-tabs .mini:hover{color:#fff}
 
+  /* 九宫格技能选择条（图片生成 Tab 专属） */
+  .g-gridmodes{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:10px 16px 0;font-size:12px}
+  .g-gridmodes .gm-lead{color:var(--text-dim);margin-right:2px}
+  .gm-chip{display:flex;align-items:center;gap:5px;border:1px solid var(--border);background:var(--panel-2);color:var(--text-dim);
+    border-radius:16px;padding:4px 12px;cursor:pointer;font-size:12px;transition:.15s}
+  .gm-chip:hover{color:var(--text);border-color:#f5a62366}
+  .gm-chip.active{color:#f5a623;border-color:#f5a623;background:#f5a62318;font-weight:600}
+
   .g-body{padding:12px 16px 0;display:flex;gap:10px}
   .g-up{width:56px;height:56px;border-radius:12px;border:1px solid var(--border);background:var(--panel-2);color:var(--text-dim);
     display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:11px;cursor:pointer;transition:.15s;flex-shrink:0}
@@ -165,6 +192,7 @@
   .lib-item{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:10px;cursor:grab;font-size:13px;transition:.15s;border:1px dashed transparent}
   .lib-item:hover{background:var(--card-hover);border-color:var(--border)}
   .lib-ico{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+  .lib-group{font-size:10px;color:var(--text-dim);letter-spacing:1px;padding:10px 6px 2px;opacity:.75}
   .tpls{flex:1;overflow-y:auto;padding:0 10px 10px;display:flex;flex-direction:column;gap:8px}
   .tpl-loading{font-size:11px;color:var(--text-dim);padding:6px 4px}
   .tpl{border:1px solid var(--border);border-radius:10px;padding:9px 10px;cursor:pointer;transition:.15s;background:rgba(255,255,255,.02)}
@@ -174,6 +202,16 @@
   .tpl-desc{font-size:10.5px;color:var(--text-dim);line-height:1.5;margin-top:4px}
   .tpl-meta{font-size:10px;color:#4f8cff;margin-top:5px;opacity:.85}
   .hint{padding:10px 14px;font-size:11px;color:var(--text-dim);line-height:1.8;border-top:1px solid var(--border)}
+
+  /* ===== 连线图例（画布左下，可折叠） ===== */
+  .legend{position:fixed;left:232px;bottom:74px;z-index:38;font-size:10.5px;color:var(--text-dim);background:rgba(22,25,35,.85);
+    backdrop-filter:blur(8px);border:1px solid var(--border);border-radius:10px;padding:7px 10px;line-height:1.7;max-width:210px;cursor:pointer;transition:.15s}
+  .legend:hover{border-color:#4f8cff44}
+  .legend b{color:var(--text);font-size:11px}
+  .legend .lg-row{display:flex;align-items:center;gap:6px}
+  .legend .lg-dot{width:14px;height:3px;border-radius:2px;flex-shrink:0}
+  .legend.folded .lg-row{display:none}
+  .legend.folded{padding:5px 10px}
 
   /* toast / 菜单 */
   .toast{position:fixed;top:70px;left:50%;transform:translateX(-50%) translateY(-20px);background:var(--card-hover);border:1px solid var(--accent);

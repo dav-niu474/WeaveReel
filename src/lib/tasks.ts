@@ -4,7 +4,8 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { tasks, settings } from "@/db/schema";
 import { getDb } from "@/db";
 import { callSNImage, callSNText, describeRefImage, getProvider, type TaskContext } from "./sensenova";
-import { sizeFromRatio, splitShots } from "./svg";
+import { sizeFromRatio } from "./svg";
+import { gridShots, GRID_CONSISTENCY, gridModeDef } from "./gridModes";
 
 export interface GenerateInput {
     type?: string;
@@ -13,6 +14,7 @@ export interface GenerateInput {
     model?: string;
     ratio?: string;
     linkSeed?: number;
+    gridMode?: string;
     context?: TaskContext;
 }
 
@@ -20,7 +22,7 @@ export interface TaskRow {
     id: string; type: string; prompt: string; status: string; createdAt: number;
     count: number; contextJson: string; seedBase: number | null;
     resultsJson: string | null; textResult: string | null; error: string | null;
-    refMode: string | null; simulated: number; promptUsed: string | null;
+    refMode: string | null; gridMode: string | null; simulated: number; promptUsed: string | null;
     cellPromptsJson: string | null; shotsJson: string | null;
 }
 
@@ -60,6 +62,8 @@ export function taskView(t: TaskRow) {
         baseSeed: t.seedBase,
         usedContext: { texts: ctx.texts.length, images: ctx.images.length },
         refMode: t.refMode || null,
+        gridMode: t.gridMode || null,
+        gridModeLabel: t.type === "nine" ? gridModeDef(t.gridMode).label : null,
         simulated: !!t.simulated,
         promptUsed: t.promptUsed || null,
         cellPrompts: t.cellPromptsJson ? JSON.parse(t.cellPromptsJson) : null,
@@ -78,6 +82,7 @@ export async function createTask(input: GenerateInput): Promise<TaskRow> {
         status: "running", createdAt: Date.now(),
         count: Math.max(1, Math.min(9, parseInt(String(input.count), 10) || 1)),
         contextJson: JSON.stringify(ctx), seedBase,
+        gridMode: input.gridMode ? String(input.gridMode).slice(0, 20) : null,
     };
     await db.insert(tasks).values(row);
     return rowById(row as unknown as Record<string, unknown>);
@@ -143,12 +148,15 @@ export async function runTask(taskId: string, opts: { model?: string; ratio?: st
             const n = Math.max(1, Math.min(9, t.count || 1));
             const size = sizeFromRatio(opts.ratio);
             const basePrompt = (t.prompt || "海边黄昏电影感画面") + (ctxBlock ? "，" + ctxBlock : "");
-            const shots = t.type === "nine" && ctxTexts ? splitShots(ctxTexts, n) : [];
+            /* 九宫格按技能出分镜：每种技能有自己的九拍节拍（灵感风暴/故事叙述/武打分镜/全景机位/舞蹈动作），
+               上游文案句子融合进节拍；其余图片类型维持原变体逻辑 */
+            const shots = t.type === "nine" ? gridShots(t.gridMode, ctxTexts, n) : [];
             const urls: string[] = [], cellPrompts: string[] = [];
             for (let i = 0; i < n; i++) {
                 let q: string;
                 if (shots.length) {
                     q = shots[i % shots.length] + "，" + (t.prompt || "电影感画面，统一场景与角色");
+                    if (t.type === "nine") q += "，" + GRID_CONSISTENCY;
                     if (refBlock) q += "，" + refBlock;
                 } else {
                     q = n > 1 ? basePrompt + "，画面变体 " + (i + 1) : basePrompt;

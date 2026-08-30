@@ -132,17 +132,67 @@ function extractPalette(url) {
   });
 }
 
-/* ============ 数据模型 ============ */
+/* ============ 数据模型 ============
+   节点三大角色：asset=素材（成片原子，会出现在成片里）
+                struct=结构（探索产线，产出候选拆解，本身不进成片）
+                group=组装（汇集上游，通向编辑器的出口） */
 const TYPES = {
-  text : { label: '文本',     icon: '📝', color: '#4f8cff' },
-  image: { label: '图片',     icon: '🖼', color: '#3ecf8e' },
-  nine : { label: '九宫格',   icon: '▦',  color: '#f5a623' },
-  video: { label: '视频',     icon: '🎬', color: '#8b5cf6' },
-  audio: { label: '音频',     icon: '🎵', color: '#f06292' },
-  edit : { label: '合成视频', icon: '✂️', color: '#f5576c' },
+  text : { label: '文案',     role: 'asset',  icon: '📝', color: '#4f8cff' },
+  image: { label: '镜头',     role: 'asset',  icon: '🖼', color: '#3ecf8e' },
+  nine : { label: '分镜',     role: 'struct', icon: '▦',  color: '#f5a623' },
+  video: { label: '视频·模拟', role: 'asset',  icon: '🎬', color: '#8b5cf6' },
+  audio: { label: '音频',     role: 'asset',  icon: '🎵', color: '#f06292' },
+  edit : { label: '成片',     role: 'group',  icon: '✂️', color: '#f5576c' },
 };
+const ROLE_NAMES = { asset: '素材', struct: '结构', group: '组装' };
 let nodes = [];
 let edges = [];
+
+/* ============ 连线语义：四种线各有含义，非法连线直接拒绝 ============
+   viz 可视化(蓝)：文案→镜头/视频，把文字画出来
+   ref 参考(绿)  ：镜头→镜头 / 图→文案(看图写文案) 等，延续主体与风格
+   split 拆解(橙)：任意素材→分镜，拆成多镜头候选
+   promote 提升(橙)：分镜→镜头，把某一格晋升为镜头节点
+   into 入片(红) ：素材→成片，进入时间线 */
+const EDGE_OK = {
+  text : { text: 1, image: 1, nine: 1, video: 1, edit: 1 },
+  image: { text: 1, image: 1, nine: 1, video: 1, edit: 1 },
+  nine : { image: 1, video: 1, edit: 1 },
+  video: { nine: 1, edit: 1 },
+  audio: { edit: 1 },
+  edit : {},
+};
+function edgeType(from, to) {
+  const f = nodes.find(n => n.id === from), t = nodes.find(n => n.id === to);
+  if (!f || !t) return 'ref';
+  if (t.type === 'edit') return 'into';
+  if (f.type === 'nine' && t.type === 'image') return 'promote';
+  if (t.type === 'nine') return 'split';
+  if (f.type === 'text' && (t.type === 'image' || t.type === 'video')) return 'viz';
+  return 'ref';
+}
+const EDGE_META = {
+  viz:     { color: '#4f8cff', glyph: '✎→', name: '可视化' },
+  ref:     { color: '#3ecf8e', glyph: '⇢',  name: '参考' },
+  split:   { color: '#f5a623', glyph: '▦',  name: '拆解' },
+  promote: { color: '#f5a623', glyph: '⬆',  name: '提升' },
+  into:    { color: '#f5576c', glyph: '⬈',  name: '入片' },
+};
+/** 唯一建线入口：合法性校验 + 去重 + 提示 */
+function addEdge(fromId, toId, opts = {}) {
+  const f = nodes.find(n => n.id === fromId), t = nodes.find(n => n.id === toId);
+  if (!f || !t || fromId === toId) return false;
+  if (edges.some(e => e.from === fromId && e.to === toId)) return false;
+  if (!EDGE_OK[f.type] || !EDGE_OK[f.type][t.type]) {
+    if (!opts.silent) {
+      const okTo = Object.keys(EDGE_OK[f.type] || {}).map(k => TYPES[k].label).join(' / ') || '无';
+      toast(`✕ ${TYPES[f.type].label} → ${TYPES[t.type].label} 连线无效（${TYPES[f.type].label} 可连：${okTo}）`);
+    }
+    return false;
+  }
+  edges.push({ from: fromId, to: toId });
+  return true;
+}
 
 let scale = 1, panX = 0, panY = 0, selected = null, selectedEdge = null;
 const wrap = document.getElementById('canvas-wrap'), vp = document.getElementById('viewport'), svg = document.getElementById('wires');
@@ -160,7 +210,8 @@ function mediaHTML(n) {
     const cnt = n.cells || 9, cols = n.cols || 3, base = n.vseed || 0;
     const cells = Array.from({ length: cnt }, (_, i) => {
       const src = (n.urls && n.urls[i]) || sceneURL(base + i * 3);
-      return `<img draggable="false" src="${src}" style="width:100%;height:${cnt > 4 ? '78px' : '110px'};object-fit:cover">`;
+      return `<div class="nine-cell"><img draggable="false" src="${src}" style="width:100%;height:${cnt > 4 ? '78px' : '110px'};object-fit:cover">` +
+        `<button class="cell-promote" data-nine="${n.id}" data-idx="${i}" title="提升为镜头节点（进入成片）">⬆</button></div>`;
     }).join('');
     return `<div class="nine-grid" style="grid-template-columns:repeat(${cols},1fr)">${cells}</div>`;
   }
@@ -207,10 +258,13 @@ function renderNode(n) {
     (ups.length && refTip ? `<span class="ref-chip ok" title="生成时已实际使用上游内容">${refTip}</span>` : '') +
     (stale ? `<span class="ref-chip stale" data-sync="${n.id}" title="上游内容已变化，点击重新生成本节点以同步最新内容">⚠ 上游已更新 · 同步</span>` : '') +
     `</div>` : '';
+  /* 成片节点：显示汇集清单 + 进编辑器按钮（它不生成，只组装） */
+  const editFoot = n.type === 'edit' ? `<div class="ed-stats">${ups.filter(u => u.type === 'image' || u.type === 'nine' || u.type === 'video').length} 镜头 · ${ups.filter(u => u.type === 'text').length} 文案 · ${ups.filter(u => u.type === 'audio').length} 音乐</div>
+    <button class="ed-open" data-ed="${n.id}">⬈ 进编辑器剪辑</button>` : '';
   el.innerHTML = `
-    <div class="node-label"><span style="color:${t.color}">${t.icon}</span>${n.label || t.label}</div>
+    <div class="node-label"><span style="color:${t.color}">${t.icon}</span>${n.label || t.label}<span class="role-tag role-${t.role}">${ROLE_NAMES[t.role]}</span></div>
     <div class="node-card"${cardW}>
-      ${body || promptRow}${(n.type === 'text') ? promptRow : ''}${refRow}
+      ${body || promptRow}${(n.type === 'text') ? promptRow : ''}${refRow}${editFoot}
       <button class="ndel" data-del="${n.id}" title="删除节点 (Delete)">✕</button>
       <div class="port in"  data-node="${n.id}" data-dir="in"  title="输入">＋</div>
       <div class="port out" data-node="${n.id}" data-dir="out" title="输出">＋</div>
@@ -247,14 +301,21 @@ function drawWires(temp) {
     if (!nodeEl(e.from) || !nodeEl(e.to)) return;
     const a = portPos(e.from, 'out'), b = portPos(e.to, 'in');
     const sel = selectedEdge && selectedEdge.from === e.from && selectedEdge.to === e.to;
-    const fn = nodes.find(x => x.id === e.from);
-    /* 上游节点已有产出 → 连线点亮，表示这条线有内容在流动 */
+    const fn = nodes.find(x => x.id === e.from), tn = nodes.find(x => x.id === e.to);
+    /* 连线语义着色：可视化蓝 / 参考绿 / 拆解·提升橙 / 入片红；有内容流动时加亮 */
+    const et = EDGE_META[edgeType(e.from, e.to)];
     const fed = fn && hasContent(fn) ? ' fed' : '';
-    html += `<path class="wire${sel ? ' selected' : ''}${fed}" d="${wirePath(a, b)}" data-edge="${e.from}-${e.to}"/>`;
+    const style = `stroke="${et.color}"${fed ? '' : ' opacity="0.45"'}`;
+    html += `<path class="wire${sel ? ' selected' : ''}${fed}" d="${wirePath(a, b)}" data-edge="${e.from}-${e.to}" ${style}/>`;
     const m = wireMid(a, b);
     html += `<g class="wire-mid" data-edge="${e.from}-${e.to}">
-      <circle cx="${m.x}" cy="${m.y}" r="9"/><line x1="${m.x - 4.5}" y1="${m.y}" x2="${m.x + 4.5}" y2="${m.y}"/>
-      ${sel ? '' : '<line x1="' + m.x + '" y1="' + (m.y - 4.5) + '" x2="' + m.x + '" y2="' + (m.y + 4.5) + '"/>'}</g>`;
+      <circle cx="${m.x}" cy="${m.y}" r="9" fill="${et.color}"/>
+      <text x="${m.x}" y="${m.y + 3.5}" text-anchor="middle" font-size="9" fill="#0e1220" font-weight="bold">${et.glyph[0]}</text>
+      ${sel ? '' : `<circle cx="${m.x}" cy="${m.y}" r="9" fill="none" stroke="${et.color}" stroke-opacity=".5"/>`}</g>`;
+    /* 线旁语义标签：放大到 80% 以上时显示 */
+    if (scale >= 0.8 && !sel) {
+      html += `<text class="wire-tag" x="${m.x}" y="${m.y - 13}" text-anchor="middle" font-size="10" fill="${et.color}">${et.name}</text>`;
+    }
   });
   if (temp) html += `<path d="${wirePath(temp.a, temp.b)}" stroke="#8b7bff" stroke-width="2" fill="none" stroke-dasharray="6 4"/>`;
   svg.innerHTML = html;
@@ -271,12 +332,15 @@ function insertOnWire(key) {
   pushUndo();
   const [f, t] = key.split('-');
   const fn = nodes.find(n => n.id === f), tn = nodes.find(n => n.id === t);
-  const type = fn.type === 'text' ? 'image' : (fn.type === 'image' ? 'nine' : 'video');
-  const n = { id: uid(), type, x: Math.round((fn.x + tn.x) / 2 - 40), y: Math.round((fn.y + tn.y) / 2 + 30), status: 'idle', prompt: '双击或点击下方输入框，描述这个节点…', dur: type === 'video' ? '5s' : '—' };
+  if (!fn || !tn) return;
+  /* 选一个两端都允许的中间类型；不存在则提示无法插入 */
+  const cand = ['image', 'text', 'nine', 'video'].find(c => EDGE_OK[fn.type]?.[c] && EDGE_OK[c]?.[tn.type]);
+  if (!cand) { toast('✕ 这条连线两端类型无法插入中间节点'); return; }
+  const n = { id: uid(), type: cand, x: Math.round((fn.x + tn.x) / 2 - 40), y: Math.round((fn.y + tn.y) / 2 + 30), status: 'idle', prompt: '双击或点击下方输入框，描述这个节点…', dur: cand === 'video' ? '5s' : '—' };
   nodes.push(n);
   edges = edges.filter(e => !(e.from === f && e.to === t));
-  edges.push({ from: f, to: n.id }, { from: n.id, to: t });
-  selected = n.id; render(); openPanel(); save(); toast('➕ 已在连线中插入节点');
+  addEdge(f, n.id, { silent: true }); addEdge(n.id, t, { silent: true });
+  selected = n.id; render(); openPanel(); save(); toast('➕ 已在连线中插入' + TYPES[cand].label + '节点');
 }
 
 /* ============ 平移 / 缩放 ============ */
@@ -323,6 +387,12 @@ vp.addEventListener('mousedown', e => {
     if (tn && tn.status !== 'running') { pushUndo(); startGen(tn, '同步上游'); }
     return;
   }
+  // 分镜格子「⬆ 提升为镜头」
+  const promoBtn = e.target.closest('.cell-promote');
+  if (promoBtn) { e.stopPropagation(); e.preventDefault(); promoteCell(promoBtn.dataset.nine, +promoBtn.dataset.idx); return; }
+  // 成片节点「⬈ 进编辑器」
+  const edBtn = e.target.closest('.ed-open');
+  if (edBtn) { e.stopPropagation(); e.preventDefault(); switchMode('editor'); return; }
   const port = e.target.closest('.port');
   if (port) { linking = { from: port.dataset.node, dir: port.dataset.dir }; wrap.classList.add('connecting'); e.stopPropagation(); e.preventDefault(); return; }
   const nel = e.target.closest('.node');
@@ -376,7 +446,10 @@ window.addEventListener('mouseup', e => {
       if (!other || other === linking.from) return;
       const from = linking.dir === 'out' ? linking.from : other;
       const to = linking.dir === 'out' ? other : linking.from;
-      if (!edges.some(x => x.from === from && x.to === to)) { pushUndo(); edges.push({ from, to }); save(); toast('🔗 节点已连接'); }
+      if (!edges.some(x => x.from === from && x.to === to)) {
+        pushUndo();
+        if (addEdge(from, to)) { save(); toast('🔗 已连接（' + EDGE_META[edgeType(from, to)].name + '）'); }
+      }
       linked = true;
     };
     if (port && port.dataset.dir !== linking.dir) tryConnect(port.dataset.node);
@@ -404,6 +477,8 @@ function positionFloaters(autoPan) {
   if (ty < r.top + 8) ty = r.top + 8;
   aiToolbar.style.left = tx + 'px'; aiToolbar.style.top = ty + 'px';
   const tb = ty + aiToolbar.offsetHeight;
+  /* 成片节点只组装不生成：只显示能力工具条，不弹生成面板 */
+  if (n.type === 'edit') { genPanel.classList.remove('show'); return; }
   genPanel.classList.add('show');
   let gx = cx - genPanel.offsetWidth / 2;
   gx = Math.max(232, Math.min(gx, window.innerWidth - genPanel.offsetWidth - 12));
@@ -418,14 +493,14 @@ function positionFloaters(autoPan) {
 }
 function hideFloaters() { aiToolbar.classList.remove('show'); genPanel.classList.remove('show'); $('moreMenu').style.display = 'none'; }
 
-/* ============ AI 能力 ============ */
+/* ============ AI 能力（按节点角色分组：素材=处理类，分镜=拆解类，成片=出口类） ============ */
 const CAPS = {
-  image: [['全景', '🕶'], ['多角度', '🔄'], ['九宫格', '▦'], ['画面切分', '🖥'], ['打光', '💡'], ['故事推演', '📖'], ['对口型', '👄'], ['消除笔', '🧽'], ['图片超清', '✨']],
-  nine : [['画面切分', '🖥'], ['图片超清', '✨'], ['故事推演', '📖'], ['风格迁移', '🎨']],
-  video: [['对口型', '👄'], ['故事推演', '📖'], ['视频超清', '✨'], ['延长', '⏱'], ['慢放', '🐢'], ['循环', '🔁']],
+  image: [['全景', '🕶'], ['打光', '💡'], ['图片超清', '✨'], ['拆解分镜', '▦'], ['故事推演', '📖']],
+  nine : [['切换技能', '🎛'], ['提升全部', '⬆'], ['画面切分', '🖥'], ['图片超清', '✨'], ['风格迁移', '🎨']],
+  video: [['故事推演', '📖'], ['慢放', '🐢'], ['循环', '🔁']],
   text : [['润色', '✒️'], ['扩写', '📖'], ['分镜拆解', '🎬'], ['提取角色', '🧑‍🎤'], ['翻译', '🌐']],
-  audio: [['变奏', '🎼'], ['人声分离', '🎙'], ['循环', '🔁'], ['对口型', '👄']],
-  edit : [['加字幕', '💬'], ['智能配音', '🔊'], ['统一调色', '🎨'], ['导出成片', '⬇']],
+  audio: [['变奏', '🎼'], ['循环', '🔁']],
+  edit : [['进编辑器', '⬈'], ['导出成片', '⬇']],
 };
 const MORE_CAPS = ['局部重绘', '扩图', '背景替换', '风格化', '去水印'];
 function buildToolbar() {
@@ -482,6 +557,7 @@ async function startGen(n, taskLabel, opts = {}) {
       type: n.type, prompt: (n.prompt || '') + (opts.instr ? '，' + opts.instr : ''), seed: n.vseed || 0,
       count: opts.count ? opts.count : (n.cells || (n.type === 'nine' ? 9 : 1)),
       model: opts.model, ratio: opts.ratio,
+      gridMode: n.type === 'nine' ? (n.gridMode || gridMode) : undefined,
       linkSeed: n.vseed || 0,
       context: { texts, images: images.map(i => ({ label: i.label, urls: i.urls || [i.url], palette: i.palette || [] })) },
     });
@@ -571,9 +647,12 @@ const CAP_PROMPTS = {
 };
 function capApply(name) {
   const n = nodes.find(x => x.id === selected); if (!n) return;
-  if (name === '九宫格' && n.type === 'image') { addNineChild(n); return; }
-  if (name === '合成视频') { capCompose(); return; }
+  if ((name === '拆解分镜' || name === '九宫格') && n.type === 'image') { addNineChild(n); return; }
+  if (name === '合成视频' || name === '整组入片') { capCompose(); return; }
+  if (name === '进编辑器') { switchMode('editor'); return; }
   if (name === '导出成片') { exportFilm(); return; }
+  if (name === '切换技能') { setTab('image'); openPanel(); toast('🎛 在下方技能条选择技能：切换即按新技能重新生成分镜'); return; }
+  if (name === '提升全部') { promoteAll(n.id); return; }
   if (n.status === 'running') { toast('⏳ 当前节点正在生成中…'); return; }
   const variety = ['全景', '打光', '消除笔', '图片超清', '风格迁移', '局部重绘', '扩图', '背景替换', '风格化', '去水印'].includes(name);
   startGen(n, name, { newSeed: variety, instr: CAP_PROMPTS[name] });
@@ -582,18 +661,59 @@ function moreApply(name) { $('moreMenu').style.display = 'none'; capApply(name);
 function addNineChild(src) {
   if (nodes.some(x => x.type === 'nine' && edges.some(e => e.from === src.id && e.to === x.id))) { toast('▦ 该图片已有九宫格节点'); return; }
   pushUndo();
-  const n = { id: uid(), type: 'nine', x: src.x + 460, y: src.y - 20, status: 'idle', prompt: '基于当前图片生成九宫格分镜…', vseed: Math.floor(Math.random() * 97) };
-  nodes.push(n); edges.push({ from: src.id, to: n.id });
-  selected = n.id; render(); openPanel(); save(); toast('▦ 已创建九宫格节点，开始生成');
-  startGen(n, '九宫格');
+  /* 用当前选中的九宫格技能创建子节点：跳舞镜头等动作类内容选「舞蹈动作/武打分镜」即调用对应分镜技能 */
+  const n = { id: uid(), type: 'nine', x: src.x + 460, y: src.y - 20, status: 'idle', prompt: '基于当前图片生成九宫格分镜…', vseed: Math.floor(Math.random() * 97), gridMode, label: '九宫格 · ' + gridModeLabel(gridMode) };
+  nodes.push(n); addEdge(src.id, n.id, { silent: true });
+  selected = n.id; render(); openPanel(); save(); toast('▦ 已创建九宫格节点（技能：' + gridModeLabel(gridMode) + '），开始生成');
+  startGen(n, gridModeLabel(gridMode));
 }
 function capCompose() {
-  pushUndo();
   const n = nodes.find(x => x.id === selected);
-  const m = { id: uid(), type: 'edit', x: (n ? n.x + 460 : 400), y: (n ? n.y : 200), status: 'idle', prompt: '将选中节点合成进时间线，自动匹配转场与节奏', vseed: Math.floor(Math.random() * 97) };
+  if (n && n.type === 'edit') { switchMode('editor'); return; }   // 成片节点再点 = 进编辑器
+  pushUndo();
+  const m = { id: uid(), type: 'edit', x: (n ? n.x + 460 : 400), y: (n ? n.y : 200), status: 'idle', prompt: '汇集上游素材，双击进入编辑器剪辑成片', vseed: Math.floor(Math.random() * 97) };
   nodes.push(m);
-  if (n) edges.push({ from: n.id, to: m.id });
-  selected = m.id; render(); openPanel(); save(); toast('⚡ 已创建合成视频节点');
+  if (n) addEdge(n.id, m.id, { silent: true });
+  selected = m.id; render(); hideFloaters(); save(); toast('⬈ 已创建成片节点，点击「进编辑器」开始剪辑');
+}
+/* ============ 分镜 → 镜头：把分镜的一格晋升为独立镜头节点（结构→素材的通道） ============ */
+function promoteCell(nineId, idx) {
+  const nine = nodes.find(x => x.id === nineId);
+  if (!nine || nine.type !== 'nine') return;
+  const cnt = nine.cells || 9;
+  if (nodes.some(x => x.type === 'image' && x.fromNine === nine.id && x.fromIdx === idx)) { toast('⬆ 该格已提升过'); return; }
+  pushUndo();
+  const cols = nine.cols || 3;
+  const shot = {
+    id: uid(), type: 'image', x: nine.x + 480, y: nine.y + (Math.floor(idx / cols)) * 40 + (idx % cols) * 36 - 60,
+    status: 'idle', prompt: (nine.cellPrompts && nine.cellPrompts[idx]) || nine.prompt || '',
+    fromNine: nine.id, fromIdx: idx,
+  };
+  if (nine.urls && nine.urls[idx] && !nine.urls[idx].startsWith('/api/scene/')) shot.url = nine.urls[idx];
+  else shot.vseed = ((nine.vseed || 0) + idx * 3) % 97;
+  nodes.push(shot); addEdge(nine.id, shot.id, { silent: true });
+  selected = shot.id; render(); openPanel(); save();
+  toast('⬆ 第 ' + (idx + 1) + ' 格已提升为镜头节点' + (shot.url ? '（沿用分镜画面）' : '，可生成出图'));
+}
+function promoteAll(nineId) {
+  const nine = nodes.find(x => x.id === nineId);
+  if (!nine || nine.type !== 'nine') return;
+  const cnt = nine.cells || 9;
+  pushUndo();
+  let made = 0;
+  for (let i = 0; i < cnt; i++) {
+    if (nodes.some(x => x.type === 'image' && x.fromNine === nine.id && x.fromIdx === i)) continue;
+    const shot = {
+      id: uid(), type: 'image', x: nine.x + 480 + Math.floor(i / 3) * 60, y: nine.y + i * 46 - 100,
+      status: 'idle', prompt: (nine.cellPrompts && nine.cellPrompts[i]) || nine.prompt || '',
+      fromNine: nine.id, fromIdx: i,
+    };
+    if (nine.urls && nine.urls[i] && !nine.urls[i].startsWith('/api/scene/')) shot.url = nine.urls[i];
+    else shot.vseed = ((nine.vseed || 0) + i * 3) % 97;
+    nodes.push(shot); addEdge(nine.id, shot.id, { silent: true }); made++;
+  }
+  render(); save();
+  toast('⬆ 已提升 ' + made + ' 格为镜头节点，逐格生成或直接入片');
 }
 function composeAll() {
   capCompose();
@@ -614,8 +734,14 @@ async function runChain() {
     frontier = nxt;
   }
   if (!order.length) { toast('当前节点没有下游节点：拖动输出端口连线后再试'); return; }
+  /* 链路预告：沿线统计各语义段，让用户在执行前知道这条链会做什么 */
+  const flow = {};
+  order.forEach(id => directUpstreams(id).forEach(u => {
+    if (seen.has(u.id) || u.id === start.id) { const et = EDGE_META[edgeType(u.id, id)]; flow[et.name] = (flow[et.name] || 0) + 1; }
+  }));
+  const flowTxt = Object.entries(flow).map(([k, v]) => v + '×' + k).join(' → ');
   chainBusy = true;
-  toast(`⚡ 链式生成开始 · 共 ${order.length} 个下游节点`);
+  toast(`⚡ 链式生成开始 · 共 ${order.length} 个下游节点${flowTxt ? '（' + flowTxt + '）' : ''}`);
   for (const id of order) {
     const n = nodes.find(x => x.id === id); if (!n) continue;
     selected = id; render(); openPanel();
@@ -631,9 +757,33 @@ async function runChain() {
 }
 
 /* ============ 生成面板 ============ */
+/* 九宫格技能：不同技能 → 服务端不同逐格分镜策略（灵感风暴/故事叙述/武打分镜/全景机位/舞蹈动作） */
+const GRID_MODES = [
+  ['inspire',  '灵感风暴', '💡'],
+  ['story',    '故事叙述', '📖'],
+  ['action',   '武打分镜', '🥋'],
+  ['panorama', '全景机位', '🎥'],
+  ['dance',    '舞蹈动作', '💃'],
+];
+const gridModeLabel = id => (GRID_MODES.find(m => m[0] === id) || GRID_MODES[0])[1];
+let gridMode = 'inspire';
+function renderGridModes(activeId) {
+  const box = $('gGridModes'); if (!box) return;
+  box.innerHTML = '<span class="gm-lead">▦ 技能：</span>' + GRID_MODES.map(([id, label, ico]) =>
+    `<button class="gm-chip${id === (activeId || gridMode) ? ' active' : ''}" data-gm="${id}" title="${label}">${ico} ${label}</button>`).join('');
+  box.querySelectorAll('.gm-chip').forEach(b => b.addEventListener('click', () => {
+    gridMode = b.dataset.gm;
+    const n = nodes.find(x => x.id === selected);
+    if (n && n.type === 'nine') {           // 已有九宫格节点：切换技能并重生成
+      n.gridMode = gridMode; n.label = '九宫格 · ' + gridModeLabel(gridMode);
+      render();
+      if (n.status !== 'running') startGen(n, gridModeLabel(gridMode));
+    } else renderGridModes(gridMode);
+  }));
+}
 const GEN_TABS = {
   text : { ph: '输入你想要创作的文本内容，如：一段 30 秒海边短片的旁白文案', models: ['织影 Writer 3.0', '织影 Writer 2.0', '通用大模型'], ratio: [], count: ['1篇'], cost: 1, upload: false, tabDefault: ['text'] },
-  image: { ph: '描述你想要生成的图片，或输入 @ 引用角色', models: ['即梦 5.0 Pro', '即梦 4.0', 'Flux 1.5', 'SDXL'], ratio: ['16:9 · 1K', '9:16 · 1K', '1:1 · 1K', '4:3 · 1K', '16:9 · 2K'], count: ['1张', '2张', '4张'], cost: 4, upload: true, tabDefault: ['image', 'nine'] },
+  image: { ph: '描述你想要生成的图片，或输入 @ 引用角色', models: ['即梦 5.0 Pro', '即梦 4.0', 'Flux 1.5', 'SDXL'], ratio: ['16:9 · 1K', '9:16 · 1K', '1:1 · 1K', '4:3 · 1K', '16:9 · 2K'], count: ['1张', '2张', '4张', '9张'], cost: 4, upload: true, tabDefault: ['image', 'nine'] },
   video: { ph: '描述你想要生成的视频画面与镜头运动，或输入 @ 引用角色', models: ['织影视频 V3', '织影视频 V2 Turbo', '即梦视频 2.0'], ratio: ['16:9 · 1080P', '9:16 · 1080P', '1:1 · 720P', '4K'], count: ['5s', '10s'], cost: 20, upload: true, tabDefault: ['video', 'edit'] },
   audio: { ph: '输入你想要创作的音乐内容', models: ['Mureka V9', 'Mureka V6', 'Suno V4'], ratio: [], count: ['1首'], cost: 3, upload: false, tabDefault: ['audio'] },
 };
@@ -650,6 +800,16 @@ function setTab(tab) {
   ratioSel.innerHTML = cfg.ratio.map(r => `<option>${r}</option>`).join('');
   $('gCount').innerHTML = cfg.count.map(c => `<option>${c}</option>`).join('');
   $('gCost').textContent = cfg.cost;
+  /* 九宫格技能选择条：仅图片生成 Tab 展示；选中九宫格节点时高亮其技能 */
+  const gm = $('gGridModes');
+  if (gm) {
+    gm.style.display = tab === 'image' ? 'flex' : 'none';
+    if (tab === 'image') {
+      const n = nodes.find(x => x.id === selected);
+      if (n && n.type === 'nine' && n.gridMode) gridMode = n.gridMode;
+      renderGridModes(gridMode);
+    }
+  }
 }
 function tabForNodeType(t) {
   for (const [tab, cfg] of Object.entries(GEN_TABS)) if (cfg.tabDefault.includes(t)) return tab;
@@ -702,9 +862,11 @@ $('gSend').addEventListener('click', () => {
   const r = wrap.getBoundingClientRect();
   const cx = (r.width / 2 - panX) / scale, cy = (r.height / 2 - panY) / scale;
   let type = curTab === 'text' ? 'text' : curTab === 'image' ? 'image' : curTab === 'video' ? 'video' : 'audio';
+  /* 图片多张 → 九宫格节点，并带上当前选中的九宫格技能（服务端按技能出分镜） */
   const extra = {};
-  if (curTab === 'image' && $('gCount').value === '4张') Object.assign(extra, { type: 'nine', cells: 4, cols: 2, label: '四宫格' });
-  if (curTab === 'image' && $('gCount').value === '2张') Object.assign(extra, { type: 'nine', cells: 2, cols: 2, label: '双图对比' });
+  if (curTab === 'image' && $('gCount').value === '9张') Object.assign(extra, { type: 'nine', cells: 9, cols: 3, label: '九宫格 · ' + gridModeLabel(gridMode), gridMode });
+  if (curTab === 'image' && $('gCount').value === '4张') Object.assign(extra, { type: 'nine', cells: 4, cols: 2, label: '四宫格 · ' + gridModeLabel(gridMode), gridMode });
+  if (curTab === 'image' && $('gCount').value === '2张') Object.assign(extra, { type: 'nine', cells: 2, cols: 2, label: '双图对比', gridMode });
   if (extra.type) type = extra.type;
   let n;
   const vseed = Math.floor(Math.random() * 97);
@@ -715,7 +877,7 @@ $('gSend').addEventListener('click', () => {
     n = { id: uid(), type, x: Math.round(cx - 170), y: Math.round(cy - 120), status: 'idle', prompt: txt, vseed, dur: type === 'video' ? $('gCount').value : '—', ...extra };
   }
   nodes.push(n);
-  if (src) edges.push({ from: src.id, to: n.id });
+  if (src) addEdge(src.id, n.id);
   selected = n.id; render(); openPanel();
   startGen(n, cfg.models[0], {
     count: (type === 'nine' && n.cells) ? n.cells : 1,
@@ -725,16 +887,31 @@ $('gSend').addEventListener('click', () => {
   save();
 });
 
-/* ============ 素材库 ============ */
+/* ============ 素材库（按角色分组：素材 / 结构 / 组装） ============ */
 const lib = $('lib');
-Object.entries(TYPES).forEach(([k, t]) => {
-  const d = document.createElement('div');
-  d.className = 'lib-item'; d.draggable = true;
-  d.innerHTML = `<div class="lib-ico" style="background:${t.color}22;color:${t.color}">${t.icon}</div>${t.label}`;
-  d.addEventListener('dragstart', ev => ev.dataTransfer.setData('type', k));
-  lib.appendChild(d);
+const LIB_GROUPS = [
+  ['素材 · 进成片', ['text', 'image', 'audio', 'video']],
+  ['结构 · 探索产线', ['nine']],
+  ['组装 · 成片出口', ['edit']],
+];
+LIB_GROUPS.forEach(([title, keys]) => {
+  const h = document.createElement('div');
+  h.className = 'lib-group';
+  h.textContent = title;
+  lib.appendChild(h);
+  keys.forEach(k => {
+    const t = TYPES[k];
+    const d = document.createElement('div');
+    d.className = 'lib-item'; d.draggable = true;
+    d.innerHTML = `<div class="lib-ico" style="background:${t.color}22;color:${t.color}">${t.icon}</div>${t.label}`;
+    d.addEventListener('dragstart', ev => ev.dataTransfer.setData('type', k));
+    lib.appendChild(d);
+  });
 });
 wrap.addEventListener('dragover', e => e.preventDefault());
+/* 图例折叠 */
+const legendEl = $('legend');
+if (legendEl) legendEl.addEventListener('click', () => legendEl.classList.toggle('folded'));
 /* 文件/节点拖放的 drop 处理统一在「上传」一节 */
 
 /* ============ 场景模板库（一键套用，Ctrl+Z 可撤销） ============ */
@@ -771,7 +948,7 @@ function applyTemplate(tpl) {
     if (['image', 'nine', 'video'].includes(fresh.type)) fresh.vseed = Math.floor(Math.random() * 97);
     return fresh;
   });
-  edges = tpl.edges.map(e => ({ from: idMap[e.from], to: idMap[e.to] }));
+  edges = tpl.edges.map(e => ({ from: idMap[e.from], to: idMap[e.to] })).filter(e => { const ok = !!EDGE_OK[nodes.find(n => n.id === e.from)?.type]?.[nodes.find(n => n.id === e.to)?.type]; if (!ok) console.warn('模板连线不合法已忽略', e); return ok; });
   selected = null; selectedEdge = null;
   render(); hideFloaters(); save();
   setTimeout(resetView, 30);
@@ -846,7 +1023,7 @@ function ctxAction(a) {
     pushUndo(); const n = nodes.find(x => x.id === ctxNode);
     const type = n.type === 'text' ? 'image' : n.type === 'image' ? 'video' : 'edit';
     const c = { id: uid(), type, x: n.x + 480, y: n.y, status: 'idle', prompt: '新节点…', dur: type === 'video' ? '5s' : '—', vseed: Math.floor(Math.random() * 97) };
-    nodes.push(c); edges.push({ from: ctxNode, to: c.id }); selected = c.id; render(); openPanel(); save();
+    nodes.push(c); addEdge(ctxNode, c.id); selected = c.id; render(); openPanel(); save();
   }
 }
 vp.addEventListener('dblclick', e => {
@@ -908,24 +1085,14 @@ function toast(msg) {
   clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
 }
 
-/* ============ 自动布局 ============ */
+/* ============ 自动布局（按流水线角色分列：文案 → 分镜 → 镜头/视频 → 音频 → 成片） ============ */
 function autoLayout() {
-  const layers = {}, indeg = {};
-  nodes.forEach(n => indeg[n.id] = 0);
-  edges.forEach(e => indeg[e.to]++);
-  let q = nodes.filter(n => !indeg[n.id]).map(n => n.id), lv = 0;
-  while (q.length) {
-    q.forEach(id => layers[id] = lv);
-    const nxt = [];
-    edges.forEach(e => { if (q.includes(e.from) && --indeg[e.to] === 0) nxt.push(e.to); });
-    q = nxt; lv++;
-  }
-  nodes.forEach(n => { if (!(n.id in layers)) layers[n.id] = lv; });
   pushUndo();
+  const colOrder = { text: 0, nine: 1, image: 2, video: 2, audio: 3, edit: 4 };
   const cols = {};
-  nodes.forEach(n => { const c = layers[n.id]; (cols[c] = cols[c] || []).push(n); });
-  Object.values(cols).forEach(col => col.forEach((n, i) => { n.x = 140 + layers[n.id] * 560; n.y = 120 + i * 300; }));
-  render(); resetView(); save(); toast('⌗ 已自动分层布局');
+  nodes.forEach(n => { const c = colOrder[n.type] ?? 9; (cols[c] = cols[c] || []).push(n); });
+  Object.values(cols).forEach(col => col.forEach((n, i) => { n.x = 140 + colOrder[n.type] * 560; n.y = 120 + i * 300; }));
+  render(); resetView(); save(); toast('⌗ 已按流水线布局：文案 → 分镜 → 镜头 → 成片');
 }
 
 /* ============ 快照 / 撤销重做 / 持久化（服务端 + localStorage 兜底） ============ */
@@ -1118,7 +1285,7 @@ function openQuickCreate(x, y, linkCtx) {
     const n = { id: uid(), type, x: Math.round((x - r.left - panX) / scale - 140), y: Math.round((y - r.top - panY) / scale - 40),
       status: 'idle', prompt: basePrompt, dur: type === 'video' ? '5s' : '—', vseed: Math.floor(Math.random() * 97) };
     nodes.push(n);
-    if (linkCtx) edges.push(linkCtx.dir === 'out' ? { from: linkCtx.from, to: n.id } : { from: n.id, to: linkCtx.from });
+    if (linkCtx) addEdge(linkCtx.dir === 'out' ? linkCtx.from : n.id, linkCtx.dir === 'out' ? n.id : linkCtx.from);
     selected = n.id; render(); openPanel(); save();
     toast('➕ 已创建' + TYPES[type].label + '节点' + (linkCtx ? ' 并连接，生成时将引用上游内容' : ''));
   });
@@ -1154,17 +1321,41 @@ function switchMode(m) {
 function splitSentences(text) {
   return String(text || '').split(/[。！？!?；;\n]+/).map(s => s.trim()).filter(s => s.length >= 2);
 }
-function timelineClips() {
-  const order = { video: 0, edit: 1, image: 2, nine: 3 };
-  const clips = nodes.filter(n => order[n.type] != null).sort((a, b) => order[a.type] - order[b.type]).map(n => {
-    let thumb = n.type === 'nine' ? ((n.urls && n.urls[0]) || null) : (n.url || null);
-    if (!thumb) thumb = sceneURL(n.vseed || 0);
-    const dur = n.type === 'video' ? (parseInt(n.dur) || 5) : n.type === 'edit' ? (parseInt(n.dur) || 10) : 3;
-    return { id: n.id, label: (n.label || TYPES[n.type].label), thumb, dur, prompt: n.prompt || '' };
+/* 时间线取材范围：有成片节点且接了素材 → 只取成片节点的多级上游（入片关系）；
+   否则回退为画布全部媒体节点（无成片节点时也能预览）。成片节点本身是组装出口，不作为镜头 */
+function filmScope() {
+  const edits = nodes.filter(n => n.type === 'edit');
+  if (!edits.length) return null;
+  const ids = new Set();
+  edits.forEach(en => {
+    let frontier = directUpstreams(en.id).map(u => u.id);
+    while (frontier.length) {
+      const nxt = [];
+      frontier.forEach(id => {
+        if (ids.has(id)) return;
+        ids.add(id);
+        directUpstreams(id).forEach(u => nxt.push(u.id));
+      });
+      frontier = nxt;
+    }
   });
-  const audios = nodes.filter(n => n.type === 'audio').map(n => ({ id: n.id, label: (n.prompt || '背景音乐').slice(0, 14) }));
+  return ids.size ? ids : null;
+}
+function timelineClips() {
+  const scope = filmScope();
+  const inScope = n => !scope || scope.has(n.id);
+  /* 镜头顺序 = 画布空间顺序（左 → 右流水线），与用户排布意图一致 */
+  const clips = nodes.filter(n => ['image', 'nine', 'video'].includes(n.type) && inScope(n))
+    .sort((a, b) => (a.x - b.x) || (a.y - b.y))
+    .map(n => {
+      let thumb = n.type === 'nine' ? ((n.urls && n.urls[0]) || null) : (n.url || null);
+      if (!thumb) thumb = sceneURL(n.vseed || 0);
+      const dur = n.type === 'video' ? (parseInt(n.dur) || 5) : 3;
+      return { id: n.id, label: (n.label || TYPES[n.type].label), thumb, dur, prompt: n.prompt || '' };
+    });
+  const audios = nodes.filter(n => n.type === 'audio' && inScope(n)).map(n => ({ id: n.id, label: (n.prompt || '背景音乐').slice(0, 14) }));
   const subs = [];
-  nodes.filter(n => n.type === 'text').forEach(n => {
+  nodes.filter(n => n.type === 'text' && inScope(n)).forEach(n => {
     const body = (n.story || n.prompt || '').trim();
     const parts = splitSentences(body);
     (parts.length ? parts : (body ? [body.slice(0, 30)] : [])).forEach(s => subs.push(s));
