@@ -1170,9 +1170,10 @@ function renderDockAdd() {
   const types = box.querySelector('#dpTypes');
   Object.entries(TYPES).filter(([k]) => !['nine', 'edit'].includes(k)).forEach(([k, t]) => {
     const d = document.createElement('div');
-    d.className = 'dp-tile';
+    d.className = 'dp-tile'; d.draggable = true;
     d.innerHTML = '<div class="dp-thumb" style="background:' + t.color + '18;color:' + t.color + ';font-size:20px;display:flex;align-items:center;justify-content:center">' + t.icon + '</div><span>' + t.label + (k === 'video' ? '<i style="font-style:normal;opacity:.6"> 模拟</i>' : '') + '</span>';
     d.onclick = () => addNodeOfType(k);
+    d.addEventListener('dragstart', ev => ev.dataTransfer.setData('type', k));   // 拖到画布任意位置落点创建
     types.appendChild(d);
   });
 }
@@ -1198,6 +1199,8 @@ function renderDockAssets() {
     const isVideo = /\.(mp4|webm)$/i.test(u);
     d.innerHTML = (isVideo ? '<div class="dp-thumb">🎬</div>' : '<div class="dp-thumb"><img src="' + u + '" loading="lazy"></div>') + '<span>' + u.split('/').pop().slice(0, 14) + '</span>';
     d.onclick = () => addAssetNode(u, '资产');
+    d.draggable = true;
+    d.addEventListener('dragstart', ev => ev.dataTransfer.setData('asset', JSON.stringify({ url: u, label: '资产' })));
     grid.appendChild(d);
   });
 }
@@ -1210,6 +1213,8 @@ function renderPresetGrid(list, box, labelPrefix) {
     d.innerHTML = '<div class="dp-thumb"><img src="' + sceneURL(pc.seed) + '" loading="lazy"></div><span>' + esc(pc.name) + '</span>';
     d.title = pc.prompt;
     d.onclick = () => addAssetNode(null, labelPrefix + ' · ' + pc.name, pc.prompt);
+    d.draggable = true;
+    d.addEventListener('dragstart', ev => ev.dataTransfer.setData('asset', JSON.stringify({ label: labelPrefix + ' · ' + pc.name, prompt: pc.prompt, seed: pc.seed })));
     grid.appendChild(d);
   });
 }
@@ -1258,8 +1263,10 @@ function renderTemplates(list, box) {
     d.className = 'tpl';
     d.innerHTML = `<div class="tpl-top"><span class="tpl-ico">${tpl.icon}</span>${esc(tpl.name)}</div>
       <div class="tpl-desc">${esc(tpl.desc)}</div>
-      <div class="tpl-meta">${tpl.nodes.length} 节点 · ${tplMeta(tpl)} → 点击套用</div>`;
+      <div class="tpl-meta">${tpl.nodes.length} 节点 · ${tplMeta(tpl)} → 点击/拖入画布套用</div>`;
     d.addEventListener('click', () => applyTemplate(tpl));
+    d.draggable = true;
+    d.addEventListener('dragstart', ev => ev.dataTransfer.setData('template', tpl.id));   // 拖入画布 = 开新画布
     box.appendChild(d);
   });
 }
@@ -1576,10 +1583,29 @@ wrap.addEventListener('drop', e => {
     }
     return;
   }
+  const r = wrap.getBoundingClientRect();
+  const dx = Math.round((e.clientX - r.left - panX) / scale - 140), dy = Math.round((e.clientY - r.top - panY) / scale - 90);
+  /* 拖入模板 = 整张画布替换为新画布 */
+  const tplId = e.dataTransfer.getData('template');
+  if (tplId) {
+    const tpl = (tplCache || []).find(x => x.id === tplId);
+    if (tpl) { applyTemplate(tpl); toast('📦 已拖入模板「' + tpl.name + '」，画布已更新'); }
+    return;
+  }
+  /* 拖入素材/主体/资产 → 落点创建图片节点 */
+  const assetRaw = e.dataTransfer.getData('asset');
+  if (assetRaw) {
+    let a2 = {}; try { a2 = JSON.parse(assetRaw); } catch (_) {}
+    pushUndo();
+    const n = { id: uid(), type: 'image', x: dx, y: dy, status: 'idle', label: a2.label || '素材', prompt: a2.prompt || '双击或点击下方输入框，描述这个节点…' };
+    if (a2.url) n.url = a2.url; else n.vseed = a2.seed != null ? a2.seed : Math.floor(Math.random() * 97);
+    nodes.push(n); selected = n.id; render(); openPanel(); save();
+    toast('🖼 已放入素材「' + (a2.label || '图片') + '」，可连线后作为下游参考');
+    return;
+  }
   const type = e.dataTransfer.getData('type'); if (!type) return;
   pushUndo();
-  const r = wrap.getBoundingClientRect();
-  const n = { id: uid(), type, x: Math.round((e.clientX - r.left - panX) / scale - 140), y: Math.round((e.clientY - r.top - panY) / scale - 90),
+  const n = { id: uid(), type, x: dx, y: dy,
     status: 'idle', prompt: '双击或点击下方输入框，描述这个节点…', dur: type === 'video' ? '5s' : '—', vseed: Math.floor(Math.random() * 97) };
   nodes.push(n); selected = n.id; render(); openPanel(); save();
 });
