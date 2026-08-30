@@ -1233,6 +1233,7 @@ function renderDockStock() {
   if (assetsCache) renderPresetGrid(assetsCache.scenes, box, '素材');
   if (tplCache) renderTemplates(tplCache, box.querySelector('#dpTps'));
 }
+function closeDock() { if (activeDock) toggleDock(activeDock); }
 function initDock() {
   [['dockAdd', 'add'], ['dockAssets', 'assets'], ['dockSubjects', 'subjects'], ['dockStock', 'stock']]
     .forEach(([id, sec]) => { $(id).onclick = () => toggleDock(sec); });
@@ -1589,7 +1590,7 @@ wrap.addEventListener('drop', e => {
   const tplId = e.dataTransfer.getData('template');
   if (tplId) {
     const tpl = (tplCache || []).find(x => x.id === tplId);
-    if (tpl) { applyTemplate(tpl); toast('📦 已拖入模板「' + tpl.name + '」，画布已更新'); }
+    if (tpl) { closeDock(); applyTemplate(tpl); toast('📦 已拖入模板「' + tpl.name + '」，画布已更新'); }
     return;
   }
   /* 拖入素材/主体/资产 → 落点创建图片节点 */
@@ -1600,6 +1601,7 @@ wrap.addEventListener('drop', e => {
     const n = { id: uid(), type: 'image', x: dx, y: dy, status: 'idle', label: a2.label || '素材', prompt: a2.prompt || '双击或点击下方输入框，描述这个节点…' };
     if (a2.url) n.url = a2.url; else n.vseed = a2.seed != null ? a2.seed : Math.floor(Math.random() * 97);
     nodes.push(n); selected = n.id; render(); openPanel(); save();
+    closeDock();
     toast('🖼 已放入素材「' + (a2.label || '图片') + '」，可连线后作为下游参考');
     return;
   }
@@ -1608,6 +1610,7 @@ wrap.addEventListener('drop', e => {
   const n = { id: uid(), type, x: dx, y: dy,
     status: 'idle', prompt: '双击或点击下方输入框，描述这个节点…', dur: type === 'video' ? '5s' : '—', vseed: Math.floor(Math.random() * 97) };
   nodes.push(n); selected = n.id; render(); openPanel(); save();
+  closeDock();
 });
 /* Ctrl+V 粘贴截图 / 图片直接上传 */
 window.addEventListener('paste', e => {
