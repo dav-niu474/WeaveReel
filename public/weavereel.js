@@ -798,13 +798,14 @@ function splitAudio(v) {
 }
 function moreApply(name) { $('moreMenu').style.display = 'none'; capApply(name); }
 function addNineChild(src, opts = {}) {
-  if (nodes.some(x => x.type === 'nine' && edges.some(e => e.from === src.id && e.to === x.id))) { toast('▦ 该图片已有九宫格节点'); return; }
+  /* 允许同一图片挂多个九宫格子节点（如 灵感风暴 与 武打分镜 各生成一份），自动错开位置 */
   pushUndo();
   const mode = opts.mode || gridMode;
   const cells = opts.cells || 9;
   const cols = cells >= 6 ? 3 : 2;
-  /* 用弹窗里选定的技能与宫格数创建子节点：不同场景输出不同规格的九宫格 */
-  const n = { id: uid(), type: 'nine', x: src.x + 460, y: src.y - 20, status: 'idle',
+  const siblings = nodes.filter(x => x.type === 'nine' && edges.some(e => e.from === src.id && e.to === x.id)).length;
+  const spot = findSpot(src.x + 460, src.y - 20 + siblings * 60, 420, 260);
+  const n = { id: uid(), type: 'nine', x: spot.x, y: spot.y, status: 'idle',
     prompt: opts.prompt || '基于当前图片生成九宫格分镜…', vseed: Math.floor(Math.random() * 97),
     gridMode: mode, cells, cols, label: (cells === 9 ? '九宫格' : cells + '宫格') + ' · ' + gridModeLabel(mode) };
   nodes.push(n); addEdge(src.id, n.id, { silent: true });
