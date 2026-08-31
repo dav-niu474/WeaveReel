@@ -462,14 +462,9 @@ vp.addEventListener('mousedown', e => {
   // 节点右上「🔄 替换素材」
   const qrBtn = e.target.closest('.qreplace');
   if (qrBtn) { e.stopPropagation(); e.preventDefault(); pickFileForReplace(qrBtn.dataset.qr); return; }
-  // 节点右侧「＋」：弹出类型选择菜单，选择后创建并自动连线
+  // 节点右侧「＋」：按下时只拦截（避免触发节点拖拽），菜单在 click 阶段打开
   const qcBtn = e.target.closest('.qcreate');
-  if (qcBtn) {
-    e.stopPropagation(); e.preventDefault();
-    const r = qcBtn.getBoundingClientRect();
-    openQuickCreate(r.right + 10, r.top - 20, { dir: 'out', from: qcBtn.dataset.qc });
-    return;
-  }
+  if (qcBtn) { e.stopPropagation(); e.preventDefault(); return; }
   // 分镜格子「⬆ 提升为镜头」
   const promoBtn = e.target.closest('.cell-promote');
   if (promoBtn) { e.stopPropagation(); e.preventDefault(); promoteCell(promoBtn.dataset.nine, +promoBtn.dataset.idx); return; }
@@ -1489,6 +1484,14 @@ function ctxAction(a) {
     nodes.push(c); addEdge(ctxNode, c.id); selected = c.id; render(); openPanel(); save();
   }
 }
+vp.addEventListener('click', e => {
+  const qcBtn = e.target.closest('.qcreate');
+  if (qcBtn) {
+    e.stopPropagation(); e.preventDefault();
+    const r = qcBtn.getBoundingClientRect();
+    openQuickCreate(r.right + 10, r.top - 20, { dir: 'out', from: qcBtn.dataset.qc });
+  }
+});
 vp.addEventListener('dblclick', e => {
   const el = e.target.closest('.node');
   if (!el) return;
