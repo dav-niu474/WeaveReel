@@ -156,6 +156,8 @@ let nodes = [];
 let edges = [];
 /* 节点分组（绑定）：如「主体图 → 特效参考图 → 视频」绑成一个镜头组，整组框住、整组拖动 */
 let groups = [];
+let projectName = '未命名项目';
+function renderProjName() { const el = $('projName'); if (el && document.activeElement !== el) el.textContent = projectName; }
 
 /* ============ 连线语义：四种线各有含义，非法连线直接拒绝 ============
    viz 可视化(蓝)：文案→图片/视频，把文字画出来
@@ -1341,7 +1343,22 @@ function initDock() {
   $('dockVision').onclick = () => { toast($('dockVision').title || '视觉参考通道状态未知'); };
   api.getAssets().then(d => { assetsCache = d; if (activeDock === 'subjects') renderDockSubjects(); if (activeDock === 'stock') renderDockStock(); }).catch(() => {});
 }
+/* 顶栏项目名：点击编辑，回车/失焦确认并保存 */
+function initProjName() {
+  const el = $('projName'); if (!el) return;
+  el.addEventListener('focus', () => {
+    const range = document.createRange(); range.selectNodeContents(el);
+    const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range);
+  });
+  el.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); el.blur(); } });
+  el.addEventListener('blur', () => {
+    const v = (el.textContent || '').trim().slice(0, 40) || '未命名项目';
+    if (v !== projectName) { projectName = v; save(); toast('📝 项目名已更新：' + v); }
+    renderProjName();
+  });
+}
 initDock();
+initProjName();
 wrap.addEventListener('dragover', e => e.preventDefault());
 /* 图例折叠 */
 const legendEl = $('legend');
@@ -1478,7 +1495,7 @@ window.addEventListener('keydown', e => {
   const mod0 = e.ctrlKey || e.metaKey;
   if (mod0 && e.key.toLowerCase() === 's') { e.preventDefault(); saveCanvas(); return; }
   if (e.key === 'Escape' && ninePick) { exitNinePick(); return; }
-  if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') {
+  if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.isContentEditable) {
     return;
   }
   const mod = e.ctrlKey || e.metaKey;
@@ -1555,7 +1572,7 @@ function undo() { if (!undoStack.length) { toast('没有可撤销的操作'); re
 function redo() { if (!redoStack.length) { toast('没有可重做的操作'); return; } undoStack.push(serialize()); restoreSnapshot(redoStack.pop()); toast('↪ 已重做'); }
 function saveNow() {
   clearTimeout(saveTimer);
-  const payload = { nodes, edges, groups, view: { scale, panX, panY } };
+  const payload = { nodes, edges, groups, name: projectName, view: { scale, panX, panY } };
   try { localStorage.setItem(LS_KEY, JSON.stringify(payload)); } catch (_) {}
   return api.putProject(payload);
 }
@@ -1585,6 +1602,7 @@ async function loadProject() {
     const d = await api.getProject();
     if (d && Array.isArray(d.nodes) && d.nodes.length) {
       nodes = d.nodes; edges = d.edges || []; groups = d.groups || [];
+      if (d.name) { projectName = d.name; renderProjName(); }
       // 恢复时把进行中的任务视为已完成（结果已在节点上）
       nodes.forEach(n => { if (n.status === 'running') { n.status = 'done'; n.progress = 100; } });
       if (d.view && d.view.scale) { scale = d.view.scale; panX = d.view.panX || 0; panY = d.view.panY || 0; }

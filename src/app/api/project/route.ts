@@ -23,14 +23,14 @@ export async function GET() {
     }
     const r = rows[0];
     const d: any = JSON.parse(r.data);
-    return NextResponse.json({ nodes: d.nodes ?? [], edges: d.edges ?? [], groups: d.groups ?? [], view: r.view ? JSON.parse(r.view) : null });
+    return NextResponse.json({ name: d.name || '未命名项目', nodes: d.nodes ?? [], edges: d.edges ?? [], groups: d.groups ?? [], view: r.view ? JSON.parse(r.view) : null });
 }
 
 export async function PUT(req: Request) {
     const body: any = await req.json().catch(() => null);
     if (!body || !Array.isArray(body.nodes)) return NextResponse.json({ error: "invalid project" }, { status: 400 });
     const db = await getDb();
-    const values = { data: JSON.stringify({ nodes: body.nodes, edges: body.edges ?? [], groups: body.groups ?? [] }), view: body.view ? JSON.stringify(body.view) : null, updatedAt: Date.now() };
+    const values = { data: JSON.stringify({ nodes: body.nodes, edges: body.edges ?? [], groups: body.groups ?? [], name: typeof body.name === 'string' ? body.name.slice(0, 40) : '未命名项目' }), view: body.view ? JSON.stringify(body.view) : null, updatedAt: Date.now() };
     const rows = await db.select().from(projects).where(eq(projects.id, "default"));
     if (rows.length) await db.update(projects).set(values).where(eq(projects.id, "default"));
     else await db.insert(projects).values({ id: "default", ...values });

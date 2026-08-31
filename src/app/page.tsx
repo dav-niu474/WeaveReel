@@ -14,7 +14,7 @@ export default function Home() {
             <div className="topbar">
                 <div className="topbar-left">
                     <div className="logo"><div className="dot">✦</div>织影 WeaveReel</div>
-                    <div className="project-name">/ <b>夏日海边 · 野餐短片</b></div>
+                    <div className="project-name"><span className="pn-sep">/</span> <b id="projName" contentEditable suppressContentEditableWarning spellCheck={false} title="点击重命名项目，回车确认">未命名项目</b></div>
                 </div>
                 <div className="mode-switch">
                     <button id="msCanvas" className="active" onClick={call("switchMode", "canvas")}>🖥 画布</button>
