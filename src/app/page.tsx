@@ -99,7 +99,7 @@ export default function Home() {
                     </div>
                 </div>
             </div>
-            <input type="file" id="fileInput" accept="image/*" style={{ display: "none" }} onChange={(e) => (window as unknown as Engine).onFilePicked?.(e)} />
+            <input type="file" id="fileInput" accept="image/*,video/mp4,video/webm" style={{ display: "none" }} onChange={(e) => (window as unknown as Engine).onFilePicked?.(e)} />
 
             {/* 右侧悬浮 Dock：新增 / 资产库 / 主体库 / 素材库 */}
             <div className="dock" id="dock">

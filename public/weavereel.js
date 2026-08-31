@@ -211,6 +211,11 @@ function mediaHTML(n) {
     return `<div class="nine-grid" style="grid-template-columns:repeat(${cols},1fr)">${cells}</div>`;
   }
   if (n.type === 'video') {
+    const isRealVideo = n.url && /\.(mp4|webm|m4v|mov)$/i.test(n.url);
+    if (isRealVideo) {
+      return `<video draggable="false" src="${n.url}" style="width:340px" controls preload="metadata"></video>
+        <div class="dur-chip">⏱ ${n.dur || '5s'}</div>`;
+    }
     return `<img draggable="false" src="${n.url || sceneURL((n.vseed || 0) + 1)}" style="width:340px">
       <div class="play-badge"></div><div class="dur-chip">⏱ ${n.dur || '5s'}</div>`;
   }
@@ -1663,7 +1668,8 @@ async function replaceNodeMaterial(id, file) {
 /* 统一上传入口：文件 → POST /api/upload → 画布中心新建图片节点 */
 async function uploadFiles(files) {
   const imgs = [...files].filter(f => f.type.startsWith('image/'));
-  if (!imgs.length) { toast('仅支持图片素材（PNG / JPG / WebP…）'); return; }
+  const vids = [...files].filter(f => /^video\//.test(f.type) || /\.(mp4|webm|mov|m4v)$/i.test(f.name));
+  if (!imgs.length && !vids.length) { toast('仅支持图片与视频素材（PNG / JPG / WebP / MP4 / WebM…）'); return; }
   for (const f of imgs) {
     toast('⬆ 正在上传 ' + f.name + ' …');
     try {
@@ -1676,8 +1682,20 @@ async function uploadFiles(files) {
       toast('上传失败：' + err.message);
     }
   }
+  for (const f of vids) {
+    toast('⬆ 正在上传视频 ' + f.name + ' …');
+    try {
+      const r = await api.upload(f);
+      pushUndo();
+      const spot = findSpot(Math.round((innerWidth / 2 - panX) / scale - 170), Math.round((innerHeight / 2 - panY) / scale - 150), 360, 260);
+      const n = { id: uid(), type: 'video', url: r.url, x: spot.x, y: spot.y, status: 'done', progress: 100, prompt: '上传视频：' + f.name, dur: '5s' };
+      nodes.push(n); selected = n.id;
+    } catch (err) {
+      toast('视频上传失败：' + err.message);
+    }
+  }
   render(); openPanel(); save();
-  toast('🖼 已上传 ' + imgs.length + ' 张素材到画布');
+  toast('📥 已上传 ' + imgs.length + ' 张图片、' + vids.length + ' 个视频到画布');
 }
 function onFilePicked(ev) {
   const files = ev.target.files;
